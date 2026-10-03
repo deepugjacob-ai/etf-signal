@@ -2,11 +2,11 @@
 
 A paper-trading test of two ETF strategies on the ASX, with alerts to your phone and laptop.
 
-- **Strategy B (trend-following, weekly).** Ranks 57 ASX ETFs by 3, 6 and 12-month momentum, holds up to 5 that beat cash and sit above their 200-day average, with no more than 2 from one theme. Checked every Friday from 3pm. In a bear market it holds at most 2 and keeps the rest in AAA.
-- **Strategy A (daily pullbacks, paper only).** Buys short dips in uptrending ETFs and sells on the bounce. The backtest showed about 0% a year after costs, so it is here only so you can see that for yourself.
+- **Strategy B (trend-following, weekly).** Ranks ASX ETFs that beat cash and sit above their 200-day average by 3, 6 and 12-month momentum, and holds up to 5, with no more than 2 from one theme and none trading under $1M a day. Any holding above 40% is trimmed back to 30%. Checked every Friday from 3pm. In a bear market it holds at most 2 and keeps the rest in AAA.
+- **Strategy A (daily pullbacks, paper only, no alerts).** Buys short dips in uptrending ETFs and sells on the bounce. The backtest showed about 0–1% a year after costs, so it runs silently as a comparison.
 - **Buy and hold.** 40% STW, 40% IVV, 20% VEU, rebalanced monthly, as the yardstick.
 
-Each starts with $10,000 of paper money. Every trade pays a 0.15% allowance for the bid-ask spread.
+Each starts with $10,000 of paper money. Every trade pays a 0.15% allowance for the bid-ask spread. To see orders and results for a different amount, set **Investment amount** in the dashboard's Settings. The paper portfolios still run on $10,000, and every dollar figure in the dashboard and alerts is scaled to your amount, so percentages are the same.
 
 ## How it works
 
@@ -69,7 +69,7 @@ On the laptop, open the dashboard in Chrome or Edge and tap **Turn on alerts** t
 
 - **Every 20 minutes during ASX hours:** prices and paper values update. No alert.
 - **Friday from 3pm:** Strategy B's weekly check. You get an alert with any buys and sells, or "no changes".
-- **Weekdays from 3pm:** Strategy A checks for paper trades. Alert only if it trades.
+- **Weekdays from 3pm:** Strategy A makes its paper trades. No alerts.
 - **When the market trend changes** (uptrend, sideways, downtrend): an alert.
 - **If a check fails:** one alert per day explaining what went wrong. The dashboard shows the error too.
 
@@ -95,20 +95,30 @@ EODHD_API_KEY=your_key python -m engine.backtest
 
 The live engine and the backtest share the same decision code, so the backtest tests exactly what runs live.
 
-## Backtest results (2 Jan 2013 to 2 Oct 2026)
+## Backtest results (rules version 2, 2 Jan 2013 to 2 Oct 2026)
 
-| | Per year | Worst fall | $10k became |
-|---|---|---|---|
-| Strategy B | 10.6% | −18.6% | $40,395 |
-| Strategy A | −0.1% | −19.2% | $9,837 |
-| Buy and hold 40/40/20 | 13.8% | −27.8% | $59,585 |
+Trades are filled at the next day's close after each decision, with a 0.15% cost on every trade.
 
-These include a 0.15% cost per trade and only ETFs that still exist today, which flatters results slightly. Expect live results to be worse than a backtest.
+| | Per year | Volatility | Sharpe | Worst fall | $10k became |
+|---|---|---|---|---|---|
+| Strategy B | 11.1% | 11.2% | 0.77 | −17.8% | $42,966 |
+| Strategy A (paper) | 0.9% | 6.4% | −0.23 | −16.4% | $11,358 |
+| Buy and hold 40/40/20 | 13.8% | 12.0% | 0.92 | −27.8% | $59,371 |
+
+Strategy B holds an ETF for about 156 days on average, and 88% of its sales happen within 12 months, so most gains would be taxed without the 50% discount. These results use only ETFs that still exist today, which flatters them.
+
+**Rules are frozen at version 2** (4 October 2026, after independent review). Don't tune them on this history again; the paper test from October 2026 onwards is the real out-of-sample check.
+
+## Recording your own trades
+
+In **Orders**, tap **I did this** after you trade in Betashares and enter your actual units and price, or **Skipped** if you didn't follow an order. Trades that weren't in an order go in **Record another trade**. They are saved to `mytrades.json` in your Gist.
+
+The engine values your trades the same way as the paper portfolio (dividends included), and the **Overview** compares them: your value against what the same money would be worth had it followed Strategy B exactly. **Holdings** shows each parcel's tax status: short-term until it has been held 12 months.
 
 ## Known limitations
 
 - Prices are delayed 15–20 minutes, and GitHub can run checks a few minutes late.
-- On an ETF's ex-dividend day, its live price drops by the distribution before EODHD adjusts the history overnight. That can show a small false loss for that afternoon.
+- Ex-dividend days are handled: the engine adds back any distribution going ex that day (from EODHD's dividend calendar). If that calendar can't be reached, the old behaviour applies for that day.
 - The engine stores the alert signing key in your Gist (`keys.json`). Anyone with your Gist ID could see it, but it only lets them send notifications to your devices. Keep the Gist secret.
 
 This is a personal research tool, not financial advice.
