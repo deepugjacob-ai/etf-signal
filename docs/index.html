@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ETF Signals</title>
+<meta name="theme-color" content="#22385F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Signals">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ground:#EEF1F5; --surface:#FFFFFF; --ink:#18212C; --muted:#5D6977; --line:#D8DEE6;
+  --navy:#22385F; --buy:#17694F; --buy-bg:#E1F1EA; --sell:#A8323E; --sell-bg:#F8E4E6;
+  --ochre:#8F6200; --ochre-bg:#F6EBD3; --A:#7D8896; --M:#B07D12;
+  --radius-lg:18px; --radius-sm:8px;
+  font-family:"Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color:var(--ink); background:var(--ground);
+  -webkit-text-size-adjust:100%;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --ground:#10161D; --surface:#18202A; --ink:#E7ECF2; --muted:#95A2B1; --line:#2A3542;
+    --navy:#9DB4E4; --buy:#55C79F; --buy-bg:#16322A; --sell:#F08791; --sell-bg:#3A1D22;
+    --ochre:#E6B654; --ochre-bg:#352A12; --A:#8D98A6; --M:#E2B04A;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--ground)}
+body{padding:env(safe-area-inset-top) env(safe-area-inset-right) calc(env(safe-area-inset-bottom) + 24px) env(safe-area-inset-left);
+  font-variant-numeric:tabular-nums; line-height:1.45}
+.wrap{max-width:760px;margin:0 auto;padding:0 16px}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--navy);outline-offset:2px;border-radius:6px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+/* top bar */
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0 10px}
+.brand{font-weight:800;font-size:1.05rem;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.brand img{width:26px;height:26px;border-radius:7px}
+.refresh{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;font-size:.9rem;cursor:pointer}
+.refresh[disabled]{opacity:.6}
+
+/* tabs */
+nav{display:flex;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:18px;position:sticky;top:env(safe-area-inset-top);z-index:5}
+nav button{flex:1;border:0;background:transparent;padding:9px 4px;border-radius:9px;font-size:.92rem;font-weight:500;color:var(--muted);cursor:pointer}
+nav button[aria-selected="true"]{background:var(--navy);color:var(--surface)}
+@media (prefers-color-scheme: dark){nav button[aria-selected="true"]{color:#10161D}}
+
+.banner{border-radius:12px;padding:12px 14px;margin-bottom:16px;font-size:.95rem}
+.banner.err{background:var(--sell-bg);color:var(--sell)}
+.banner.warn{background:var(--ochre-bg);color:var(--ochre)}
+.banner b{display:block;margin-bottom:2px}
+
+/* hero: the market regime */
+.hero{padding:6px 0 22px}
+.hero .label{font-size:.95rem;color:var(--muted)}
+.regime{font-weight:800;font-size:clamp(3rem, 14vw, 5.6rem);line-height:.95;letter-spacing:-.045em;margin:4px 0 12px}
+.regime.bull{color:var(--buy)} .regime.bear{color:var(--sell)} .regime.sideways{color:var(--ochre)} .regime.unknown{color:var(--muted)}
+.hero p{margin:0;max-width:56ch}
+.facts{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:14px;font-size:.92rem;color:var(--muted)}
+.facts strong{color:var(--ink);font-weight:500}
+
+section{margin-bottom:26px}
+h2{font-size:1.15rem;font-weight:700;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:.92rem;margin:0 0 12px}
+
+/* the order ticket */
+.ticket{background:var(--surface);border-radius:var(--radius-lg);position:relative;border:1px solid var(--line)}
+.ticket-head{padding:16px 18px 14px;display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.ticket-head h2{margin:0}
+.ticket-head .when{color:var(--muted);font-size:.88rem;text-align:right}
+.perf{height:0;border-top:2px dashed var(--line);margin:0 18px;position:relative}
+.perf::before,.perf::after{content:"";position:absolute;top:-11px;width:20px;height:20px;border-radius:50%;background:var(--ground);border:1px solid var(--line)}
+.perf::before{left:-29px;clip-path:inset(0 0 0 50%)} .perf::after{right:-29px;clip-path:inset(0 50% 0 0)}
+.orders{list-style:none;margin:0;padding:6px 18px 4px}
+.order{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.order:last-child{border-bottom:0}
+.side{font-weight:700;font-size:.78rem;padding:4px 8px;border-radius:6px;min-width:44px;text-align:center}
+.side.BUY{background:var(--buy-bg);color:var(--buy)} .side.SELL{background:var(--sell-bg);color:var(--sell)}
+.order .tic{font-weight:700;font-size:1.1rem}
+.order .det{grid-column:2 / 4;color:var(--muted);font-size:.88rem;margin-top:-2px}
+.order .amt{font-weight:700;font-size:1.1rem;text-align:right}
+.ticket-foot{padding:12px 18px 16px;color:var(--muted);font-size:.88rem;border-top:1px solid var(--line)}
+.none{padding:18px;color:var(--ink)}
+
+/* plain panels */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px}
+.scores{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.score .name{font-size:.85rem;color:var(--muted);display:flex;align-items:center;gap:6px}
+.swatch{width:14px;height:3px;border-radius:2px;display:inline-block}
+.score .val{font-weight:700;font-size:1.25rem;letter-spacing:-.01em}
+.score .chg{font-size:.88rem}
+.pos{color:var(--buy)} .neg{color:var(--sell)}
+svg.chart{width:100%;height:auto;display:block}
+.chart-note{color:var(--muted);font-size:.88rem;margin:6px 0 0}
+
+table{width:100%;border-collapse:collapse;font-size:.95rem}
+th{font-weight:500;color:var(--muted);text-align:left;font-size:.82rem;padding:0 6px 8px}
+td{padding:10px 6px;border-top:1px solid var(--line);vertical-align:top}
+th.r,td.r{text-align:right}
+td .t{font-weight:700} td .th{color:var(--muted);font-size:.82rem}
+.bar{height:5px;background:var(--line);border-radius:3px;margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--navy)}
+tr.held td{background:color-mix(in srgb, var(--buy-bg) 55%, transparent)}
+.tag{font-size:.78rem;font-weight:500;padding:2px 7px;border-radius:5px;white-space:nowrap}
+.tag.held{background:var(--buy-bg);color:var(--buy)} .tag.trend{color:var(--muted)} .tag.below{background:var(--sell-bg);color:var(--sell)}
+.scroll{overflow-x:auto}
+
+.alerts{list-style:none;margin:0;padding:0}
+.alerts li{padding:12px 0;border-top:1px solid var(--line)}
+.alerts li:first-child{border-top:0}
+.alerts time{display:block;color:var(--muted);font-size:.82rem}
+.alerts b{display:block}
+
+/* settings */
+label{display:block;font-weight:500;margin:0 0 6px}
+input[type=text],input[type=password]{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--ground)}
+.field{margin-bottom:14px}
+.help{color:var(--muted);font-size:.86rem;margin-top:5px}
+.btn{border:0;border-radius:10px;padding:11px 16px;font-weight:700;cursor:pointer;background:var(--navy);color:var(--surface)}
+@media (prefers-color-scheme: dark){.btn{color:#10161D}}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.msg{margin-top:10px;font-size:.92rem}
+.msg.ok{color:var(--buy)} .msg.bad{color:var(--sell)}
+.note{font-size:.88rem;color:var(--muted)}
+[hidden]{display:none!important}
+@media (max-width:420px){
+  .scores{grid-template-columns:1fr;gap:8px}
+  .score{display:flex;justify-content:space-between;align-items:baseline}
+  .hide-sm{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><img src="icon-192.png" alt="">ETF Signals</div>
+    <button class="refresh" id="refresh" type="button">Refresh</button>
+  </header>
+
+  <nav role="tablist" aria-label="Sections">
+    <button role="tab" data-tab="today" aria-selected="true">This week</button>
+    <button role="tab" data-tab="holdings" aria-selected="false">Holdings</button>
+    <button role="tab" data-tab="rankings" aria-selected="false">Rankings</button>
+    <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
+  </nav>
+
+  <div id="banner"></div>
+
+  <main>
+    <div data-panel="today">
+      <div id="today"><p class="sub">Loading…</p></div>
+    </div>
+    <div data-panel="holdings" hidden><div id="holdings"></div></div>
+    <div data-panel="rankings" hidden><div id="rankings"></div></div>
+    <div data-panel="settings" hidden>
+      <section>
+        <h2>Connect your data</h2>
+        <p class="sub">The engine saves its results to your private GitHub Gist. Enter the same Gist ID and token you saved as GitHub secrets. They stay on this device only.</p>
+        <div class="panel">
+          <div class="field">
+            <label for="gist">Gist ID</label>
+            <input id="gist" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. 3f2a9c…">
+            <div class="help">The long code at the end of your gist's web address.</div>
+          </div>
+          <div class="field">
+            <label for="token">GitHub token</label>
+            <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_…">
+            <div class="help">A classic token with only the “gist” permission.</div>
+          </div>
+          <div class="row">
+            <button class="btn" id="save" type="button">Save and load</button>
+            <button class="btn ghost" id="forget" type="button">Forget on this device</button>
+          </div>
+          <div class="msg" id="saveMsg" role="status"></div>
+        </div>
+      </section>
+      <section>
+        <h2>Alerts on this device</h2>
+        <p class="sub" id="pushState">Checking…</p>
+        <div class="panel">
+          <div class="row">
+            <button class="btn" id="enablePush" type="button">Turn on alerts</button>
+            <button class="btn ghost" id="disablePush" type="button">Turn off alerts</button>
+          </div>
+          <div class="msg" id="pushMsg" role="status"></div>
+          <p class="note">On iPhone, alerts only work from the Home Screen app: in Safari tap Share, then Add to Home Screen, open Signals from the icon, and turn alerts on there. To check they work, open your repository on GitHub, go to Actions, choose Signal engine, Run workflow, and pick “test alert”.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<script>
+"use strict";
+const TZ = "Australia/Sydney";
+const START = 10000;
+const $ = (s) => document.querySelector(s);
+const store = {
+  get: (k) => { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} },
+  del: (k) => { try { localStorage.removeItem(k); } catch (e) {} },
+};
+let STATE = null;
+
+/* ---------- formatting ---------- */
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const money = (v, dp = 0) => (v == null || isNaN(v)) ? "–" :
+  v.toLocaleString("en-AU", { style: "currency", currency: "AUD", minimumFractionDigits: dp, maximumFractionDigits: dp });
+const signed$ = (v) => (v == null || isNaN(v)) ? "–" : (v >= 0 ? "+" : "−") + money(Math.abs(v));
+const pct = (v, dp = 1) => (v == null || isNaN(v)) ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v * 100).toFixed(dp) + "%";
+const cls = (v) => v > 0 ? "pos" : v < 0 ? "neg" : "";
+const num = (v, dp = 2) => (v == null || isNaN(v)) ? "–" : v.toLocaleString("en-AU", { minimumFractionDigits: dp, maximumFractionDigits: dp });
+function sydParts(d = new Date()) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-AU", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", weekday: "short", hourCycle: "h23" }).formatToParts(d).map((x) => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, wd: p.weekday, h: +p.hour, m: +p.minute };
+}
+const when = (iso) => iso ? new Date(iso).toLocaleString("en-AU", { timeZone: TZ, weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "–";
+const dayName = (ymd) => ymd ? new Date(ymd + "T12:00:00Z").toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }) : "–";
+
+/* ---------- GitHub gist access ---------- */
+async function gh(path, opts = {}) {
+  const token = store.get("token");
+  const r = await fetch("https://api.github.com" + path, {
+    ...opts, cache: "no-store",
+    headers: { "Authorization": "Bearer " + token, "Accept": "application/vnd.github+json", ...(opts.body ? { "Content-Type": "application/json" } : {}) },
+  });
+  if (r.status === 401) throw new Error("GitHub rejected the token. Check it in Settings and that it has the gist permission.");
+  if (r.status === 404) throw new Error("Gist not found. Check the Gist ID in Settings.");
+  if (!r.ok) throw new Error(`GitHub returned an error (${r.status}). Try Refresh in a minute.`);
+  return r.json();
+}
+async function readJson(files, name) {
+  const f = files[name];
+  if (!f) return null;
+  let txt = f.content;
+  if (f.truncated) txt = await (await fetch(f.raw_url, { cache: "no-store" })).text();
+  return txt && txt.trim() ? JSON.parse(txt) : null;
+}
+
+/* ---------- load ---------- */
+async function load() {
+  const btn = $("#refresh");
+  if (!store.get("gist") || !store.get("token")) { showTab("settings"); renderEmpty(); return; }
+  btn.disabled = true; btn.textContent = "Loading…";
+  try {
+    const g = await gh("/gists/" + encodeURIComponent(store.get("gist")));
+    const s = await readJson(g.files, "state.json");
+    if (!s || !s.B) { renderEmpty("Connected. The engine hasn't saved any results yet: run it once from GitHub Actions (Run workflow, check now)."); STATE = s; return; }
+    STATE = s;
+    render(s);
+  } catch (e) {
+    banner("err", "Couldn't load your data", e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "Refresh";
+    updatePushState();
+  }
+}
+
+function banner(kind, title, text) {
+  $("#banner").innerHTML = kind ? `<div class="banner ${kind}" role="alert"><b>${esc(title)}</b>${esc(text)}</div>` : "";
+}
+
+function renderEmpty(text) {
+  const t = text || "Connect your Gist in Settings to see this week's signals.";
+  const word = text ? "Waiting" : "Not connected";
+  $("#today").innerHTML = `<section class="hero"><div class="regime unknown">${word}</div><p>${esc(t)}</p></section>`;
+  $("#holdings").innerHTML = ""; $("#rankings").innerHTML = "";
+}
+
+/* ---------- render ---------- */
+const REGIME = {
+  bull: ["Uptrend", "The ASX 200 is above its 200-day average and rising. Strategy B can hold up to 5 ETFs."],
+  sideways: ["Sideways", "The ASX 200 trend is mixed. Strategy B can hold up to 5 ETFs."],
+  bear: ["Downtrend", "The ASX 200 is below its 200-day average and falling. Strategy B holds at most 2 ETFs and keeps the rest in AAA."],
+  unknown: ["Warming up", "Not enough history yet to judge the market trend."],
+};
+
+function nextWeekly(s) {
+  const now = sydParts();
+  const doneToday = s.B && s.B.last === now.date;
+  const base = new Date(now.date + "T12:00:00Z");
+  for (let i = 0; i < 8; i++) {
+    const d = new Date(base.getTime() + i * 86400000);
+    if (d.getUTCDay() !== 5) continue;
+    if (i === 0 && (doneToday || now.h >= 16)) continue;
+    return i === 0 ? "Today, from 3pm" : dayName(d.toISOString().slice(0, 10)) + ", from 3pm";
+  }
+  return "–";
+}
+
+function render(s) {
+  // status banner
+  const st = s.status || {};
+  const now = sydParts();
+  const mins = st.checked ? (Date.now() - new Date(st.checked).getTime()) / 60000 : Infinity;
+  const tradingHours = !["Sat", "Sun"].includes(now.wd) && (now.h * 60 + now.m) >= 10 * 60 + 30 && (now.h * 60 + now.m) <= 16 * 60 + 30;
+  if (st.ok === false) banner("err", "The last check failed", st.message || "Unknown error. Open GitHub Actions to see the log.");
+  else if (tradingHours && mins > 50) banner("warn", "Updates are running late", `Last check was ${when(st.checked)}. GitHub sometimes delays scheduled runs; if this lasts more than a few hours, open the Actions tab on GitHub.`);
+  else banner(null);
+
+  const [word, line] = REGIME[s.regime] || REGIME.unknown;
+  const B = s.B, A = s.A, mk = s.market || {};
+  const o = B.orders;
+  const keep = (o && o.keep) || [];
+  const items = (o && o.items) || [];
+
+  const orderRows = items.map((x) => {
+    const isCash = !!x.cash;
+    const det = x.whole ? `Sell all units (about ${num(x.units)} at ${money(x.price, 2)})`
+      : isCash ? (x.side === "BUY" ? "Cash ETF: holds the uninvested money" : "Cash ETF: funds the purchases")
+      : `About ${num(x.units)} units at ${money(x.price, 2)}`;
+    return `<li class="order"><span class="side ${x.side}">${x.side === "BUY" ? "Buy" : "Sell"}</span>
+      <span class="tic">${esc(x.ticker)}</span><span class="amt">${money(x.value)}</span><span class="det">${esc(det)}</span></li>`;
+  }).join("");
+
+  const ticket = `
+    <section class="ticket" aria-labelledby="ordersTitle">
+      <div class="ticket-head"><h2 id="ordersTitle">Strategy B orders</h2>
+        <div class="when">${o ? "Weekly check<br>" + esc(when(o.time)) : "No check yet"}</div></div>
+      <div class="perf" aria-hidden="true"></div>
+      ${items.length ? `<ul class="orders">${orderRows}</ul>` :
+        `<div class="none">No changes this time. Keep holding ${keep.length ? keep.map(esc).join(", ") : "everything in AAA"}.</div>`}
+      <div class="ticket-foot">Paper test: these trades are already made with paper money, so there's nothing to do in Betashares during the test month. Next weekly check: <strong>${esc(nextWeekly(s))}</strong>.</div>
+    </section>`;
+
+  const h = s.history || [];
+  const last = h[h.length - 1] || { B: START, A: START, M: START };
+  const score = (key, name, color, note) => {
+    const v = last[key]; const c = v / START - 1;
+    return `<div class="score"><div class="name"><span class="swatch" style="background:${color}"></span>${name}</div>
+      <div><span class="val">${money(v)}</span> <span class="chg ${cls(c)}">${pct(c)}</span></div></div>`;
+  };
+
+  const alerts = (s.alerts || []).slice(0, 12).map((a) =>
+    `<li><time>${esc(when(a.time))}</time><b>${esc(a.title)}</b>${esc(a.body)}</li>`).join("");
+
+  $("#today").innerHTML = `
+    <section class="hero">
+      <div class="label">Market today</div>
+      <div class="regime ${esc(s.regime)}">${esc(word)}</div>
+      <p>${esc(line)}</p>
+      <div class="facts">
+        <span>Prices: <strong>${mk.market_open ? "delayed ~20 min, " + esc(when(mk.quote_time)) : "last close " + esc(dayName(mk.last_daily_close))}</strong></span>
+        <span>Checked: <strong>${esc(when(st.checked))}</strong></span>
+        <span>Trend since: <strong>${esc(dayName(s.regime_since))}</strong></span>
+      </div>
+    </section>
+    ${ticket}
+    <section style="margin-top:26px">
+      <h2>Paper results</h2>
+      <p class="sub">Each started with ${money(START)} on ${esc(dayName(s.started))}, after a 0.15% trading cost on every trade.</p>
+      <div class="panel">
+        <div class="scores">
+          ${score("B", "Strategy B", "var(--navy)")}
+          ${score("A", "Strategy A", "var(--A)")}
+          ${score("M", "Buy and hold", "var(--M)")}
+        </div>
+        ${chart(h)}
+      </div>
+    </section>
+    <section>
+      <h2>Recent alerts</h2>
+      <div class="panel">${alerts ? `<ul class="alerts">${alerts}</ul>` : `<p class="note" style="margin:0">No alerts yet.</p>`}</div>
+    </section>`;
+
+  $("#holdings").innerHTML = holdingsBlock("Strategy B", "Trend-following, checked weekly. Holdings stay until they drop out of the top 15 or below their trend line.", B, true)
+    + holdingsBlock("Strategy A (paper only)", "Daily pullback buying. In the backtest this made about 0% a year after costs, so it stays paper only.", A, false)
+    + tradesBlock(B, A);
+
+  const heldThemes = {};
+  (s.rankings || []).forEach((r) => { if (r.heldB) heldThemes[r.theme] = (heldThemes[r.theme] || 0) + 1; });
+  ((B.view && B.view.holdings) || []).forEach((x) => { if (!(s.rankings || []).some((r) => r.ticker === x.ticker && r.heldB)) heldThemes[x.theme] = (heldThemes[x.theme] || 0) + 1; });
+  const rk = (s.rankings || []).map((r) => {
+    const status = r.heldB ? `<span class="tag held">Held</span>`
+      : !r.in_trend ? `<span class="tag below">Below trend</span>`
+      : (heldThemes[r.theme] || 0) >= 2 ? `<span class="tag trend">Theme full</span>`
+      : `<span class="tag trend">In trend</span>`;
+    return `<tr class="${r.heldB ? "held" : ""}"><td>${r.rank}</td><td><div class="t">${esc(r.ticker)}</div><div class="th">${esc(r.theme)}</div></td>
+      <td class="r ${cls(r.score)}">${pct(r.score)}</td><td class="r hide-sm">${pct(r.vs_trend)}</td><td class="r">${status}</td></tr>`;
+  }).join("");
+  $("#rankings").innerHTML = `<section><h2>Momentum rankings</h2>
+    <p class="sub">ETFs that beat cash over 3, 6 and 12 months, strongest first. Momentum is their average return over those three periods. Strategy B buys from the top, at most ${s.n_max ?? 5} ETFs and no more than 2 from one theme, so some strong ETFs show “Theme full”.</p>
+    <div class="panel scroll"><table><thead><tr><th>#</th><th>ETF</th><th class="r">Momentum</th><th class="r hide-sm">Vs trend line</th><th class="r">Status</th></tr></thead>
+    <tbody>${rk || `<tr><td colspan="5">No ETFs currently qualify.</td></tr>`}</tbody></table></div></section>`;
+}
+
+function holdingsBlock(title, sub, S, showRank) {
+  const v = S.view || { equity: START, cash: START, holdings: [] };
+  const rows = v.holdings.map((x) => {
+    const g = x.gain, gp = (x.cost ? x.gain / x.cost : null);
+    return `<tr><td><div class="t">${esc(x.ticker)}</div><div class="th">${esc(x.theme)}${showRank && x.rank ? ", rank " + x.rank : ""}</div></td>
+      <td class="r">${money(x.value)}<div class="bar" aria-hidden="true"><i style="width:${Math.min(100, x.weight * 100).toFixed(1)}%"></i></div></td>
+      <td class="r">${(x.weight * 100).toFixed(1)}%</td>
+      <td class="r ${cls(g)}">${signed$(g)}<div class="th">${pct(gp)}</div></td></tr>`;
+  }).join("");
+  const cashRow = `<tr><td><div class="t">AAA</div><div class="th">Cash ETF</div></td><td class="r">${money(v.cash)}</td><td class="r">${(v.cash / v.equity * 100).toFixed(1)}%</td><td></td></tr>`;
+  return `<section><h2>${esc(title)}</h2><p class="sub">${esc(sub)}</p>
+    <div class="panel scroll"><table><thead><tr><th>ETF</th><th class="r">Value</th><th class="r">Share</th><th class="r">Gain</th></tr></thead>
+    <tbody>${rows}${cashRow}</tbody></table>
+    <p class="note" style="margin:10px 0 0">Total ${money(v.equity)}</p></div></section>`;
+}
+
+function tradesBlock(B, A) {
+  const all = [...(B.trades || []).map((t) => ({ ...t, s: "B" })), ...(A.trades || []).map((t) => ({ ...t, s: "A" }))]
+    .sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 30);
+  const rows = all.map((t) => `<tr><td>${esc(dayName(t.date))}</td><td>${t.s}</td><td><span class="side ${t.side}">${t.side === "BUY" ? "Buy" : "Sell"}</span></td>
+    <td class="t">${esc(t.ticker)}</td><td class="r">${money(t.value)}</td></tr>`).join("");
+  return `<section><h2>Trade log</h2><p class="sub">Paper trades, newest first.</p><div class="panel scroll"><table>
+    <thead><tr><th>Date</th><th>Strategy</th><th>Side</th><th>ETF</th><th class="r">Value</th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="5">No trades yet.</td></tr>`}</tbody></table></div></section>`;
+}
+
+const kfmt = (v) => "$" + (v / 1000).toFixed(1) + "k";
+function chart(h) {
+  if (!h || h.length < 2) return `<p class="chart-note">The chart appears after the second trading day.</p>`;
+  const W = 360, H = 170, P = { l: 50, r: 6, t: 10, b: 24 };
+  const keys = [["M", "var(--M)", "6 5"], ["A", "var(--A)", ""], ["B", "var(--navy)", ""]];
+  const vals = h.flatMap((p) => keys.map(([k]) => p[k]).filter((x) => x != null));
+  let lo = Math.min(...vals, START), hi = Math.max(...vals, START);
+  const pad = (hi - lo) * 0.08 || 50; lo -= pad; hi += pad;
+  const x = (i) => P.l + (i / (h.length - 1)) * (W - P.l - P.r);
+  const y = (v) => P.t + (1 - (v - lo) / (hi - lo)) * (H - P.t - P.b);
+  const lines = keys.map(([k, c, dash]) => {
+    const pts = h.map((p, i) => p[k] == null ? null : `${x(i).toFixed(1)},${y(p[k]).toFixed(1)}`).filter(Boolean).join(" ");
+    return `<polyline fill="none" stroke="${c}" stroke-width="${k === "B" ? 2.6 : 1.8}" ${dash ? `stroke-dasharray="${dash}"` : ""} stroke-linejoin="round" points="${pts}"/>`;
+  }).join("");
+  const base = y(START);
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Value of each paper portfolio over time">
+    <line x1="${P.l}" x2="${W - P.r}" y1="${base}" y2="${base}" stroke="var(--line)" stroke-width="1"/>
+    <text x="${P.l - 6}" y="${base + 4}" text-anchor="end" font-size="12" fill="var(--muted)">$10k</text>
+    <text x="${P.l - 6}" y="${P.t + 10}" text-anchor="end" font-size="12" fill="var(--muted)">${kfmt(hi)}</text>
+    <text x="${P.l - 6}" y="${H - P.b}" text-anchor="end" font-size="12" fill="var(--muted)">${kfmt(lo)}</text>
+    <text x="${P.l}" y="${H - 6}" font-size="12" fill="var(--muted)">${esc(dayName(h[0].d))}</text>
+    <text x="${W - P.r}" y="${H - 6}" text-anchor="end" font-size="12" fill="var(--muted)">${esc(dayName(h[h.length - 1].d))}</text>
+    ${lines}</svg>`;
+}
+
+/* ---------- tabs ---------- */
+function showTab(name) {
+  document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  document.querySelectorAll("[data-panel]").forEach((p) => p.hidden = p.dataset.panel !== name);
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+/* ---------- settings ---------- */
+$("#gist").value = store.get("gist");
+$("#token").value = store.get("token");
+$("#save").addEventListener("click", async () => {
+  const gist = $("#gist").value.trim().split("/").filter(Boolean).pop() || "";
+  const token = $("#token").value.trim();
+  const m = $("#saveMsg");
+  if (!gist || !token) { m.className = "msg bad"; m.textContent = "Enter both the Gist ID and the token."; return; }
+  store.set("gist", gist); store.set("token", token); $("#gist").value = gist;
+  m.className = "msg"; m.textContent = "Checking…";
+  try { await gh("/gists/" + encodeURIComponent(gist)); m.className = "msg ok"; m.textContent = "Saved. Your data is loading."; await load(); }
+  catch (e) { m.className = "msg bad"; m.textContent = e.message; }
+});
+$("#forget").addEventListener("click", () => {
+  store.del("gist"); store.del("token"); $("#gist").value = ""; $("#token").value = "";
+  $("#saveMsg").className = "msg"; $("#saveMsg").textContent = "Removed from this device.";
+  STATE = null; renderEmpty();
+});
+
+/* ---------- push alerts ---------- */
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const pushSupported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+function deviceName() {
+  const u = navigator.userAgent;
+  const dev = /iPhone/.test(u) ? "iPhone" : /iPad/.test(u) ? "iPad" : /Android/.test(u) ? "Android" : /Windows/.test(u) ? "Windows PC" : /Mac/.test(u) ? "Mac" : "Device";
+  const br = /Edg\//.test(u) ? "Edge" : /Chrome\//.test(u) ? "Chrome" : /Firefox\//.test(u) ? "Firefox" : /Safari\//.test(u) ? "Safari" : "";
+  return br ? `${dev} (${br})` : dev;
+}
+function b64ToBytes(s) {
+  const pad = "=".repeat((4 - (s.length % 4)) % 4);
+  const raw = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+function sameKey(buf, b64) {
+  if (!buf) return false;
+  const a = new Uint8Array(buf), b = b64ToBytes(b64);
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+let swReg = null;
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js", { scope: "./" }).then((r) => { swReg = r; updatePushState(); }).catch(() => {});
+}
+async function currentSub() {
+  if (!pushSupported) return null;
+  const reg = swReg || await navigator.serviceWorker.ready;
+  return reg.pushManager.getSubscription();
+}
+async function updatePushState() {
+  const el = $("#pushState");
+  if (!pushSupported) {
+    el.textContent = isIOS && !standalone ? "Add Signals to your Home Screen first, then open it from the icon to turn on alerts."
+      : "This browser can't receive alerts. Try Chrome, Edge or Safari.";
+    return;
+  }
+  try {
+    const sub = await currentSub();
+    el.textContent = Notification.permission === "denied" ? "Alerts are blocked for this app in your device settings."
+      : sub ? "Alerts are on for this device." : "Alerts are off for this device.";
+  } catch (e) { el.textContent = "Alerts are off for this device."; }
+}
+async function saveSubscription(entry, remove = false) {
+  const g = await gh("/gists/" + encodeURIComponent(store.get("gist")));
+  let list = (await readJson(g.files, "subscriptions.json")) || [];
+  list = list.filter((x) => x.endpoint !== entry.endpoint);
+  if (!remove) list.push(entry);
+  await gh("/gists/" + encodeURIComponent(store.get("gist")), { method: "PATCH",
+    body: JSON.stringify({ files: { "subscriptions.json": { content: JSON.stringify(list) } } }) });
+  return list.length;
+}
+$("#enablePush").addEventListener("click", async () => {
+  const m = $("#pushMsg"); m.className = "msg";
+  if (!pushSupported) {
+    m.className = "msg bad";
+    m.textContent = isIOS && !standalone ? "On iPhone: in Safari tap Share, then Add to Home Screen. Open Signals from the new icon and tap Turn on alerts again." : "This browser can't receive alerts.";
+    return;
+  }
+  if (!store.get("gist") || !store.get("token")) { m.className = "msg bad"; m.textContent = "Connect your Gist above first."; return; }
+  if (!STATE || !STATE.public_key) { m.className = "msg bad"; m.textContent = "The engine hasn't run yet. On GitHub, open Actions, choose Signal engine and Run workflow (check now), then tap Refresh."; return; }
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") { m.className = "msg bad"; m.textContent = "Notifications weren't allowed. You can change this in your device's settings for Signals."; return; }
+    m.textContent = "Turning on…";
+    const reg = swReg || await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (sub && !sameKey(sub.options && sub.options.applicationServerKey, STATE.public_key)) { await sub.unsubscribe(); sub = null; }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(STATE.public_key) });
+    const j = sub.toJSON();
+    const n = await saveSubscription({ endpoint: j.endpoint, keys: j.keys, device: deviceName(), added: new Date().toISOString() });
+    m.className = "msg ok"; m.textContent = `Alerts are on. ${n} device${n === 1 ? "" : "s"} will get them.`;
+  } catch (e) {
+    m.className = "msg bad"; m.textContent = "Couldn't turn on alerts: " + (e.message || e);
+  }
+  updatePushState();
+});
+$("#disablePush").addEventListener("click", async () => {
+  const m = $("#pushMsg"); m.className = "msg";
+  try {
+    const sub = await currentSub();
+    if (!sub) { m.textContent = "Alerts were already off on this device."; return; }
+    const endpoint = sub.endpoint;
+    await sub.unsubscribe();
+    if (store.get("gist") && store.get("token")) await saveSubscription({ endpoint }, true);
+    m.className = "msg ok"; m.textContent = "Alerts are off for this device.";
+  } catch (e) { m.className = "msg bad"; m.textContent = "Couldn't turn off alerts: " + (e.message || e); }
+  updatePushState();
+});
+
+/* ---------- refresh ---------- */
+$("#refresh").addEventListener("click", load);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") load(); });
+setInterval(() => { if (document.visibilityState === "visible") load(); }, 5 * 60 * 1000);
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+pandas==3.0.2
+numpy==2.4.4
+requests==2.33.1
+pywebpush==2.5.0
+py-vapid==1.9.4
+cryptography==50.0.2
+tzdata
