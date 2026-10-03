@@ -185,6 +185,19 @@ input[type=text],input[type=password]{width:100%;padding:11px 12px;border:1px so
         </div>
       </section>
       <section>
+        <h2>Investment amount</h2>
+        <p class="sub">How much you plan to put into Strategy B. Orders, alerts and results are all shown for this amount. It's saved to your Gist, so phone and laptop match.</p>
+        <div class="panel">
+          <div class="field">
+            <label for="capital">Amount (A$)</label>
+            <input id="capital" type="text" inputmode="numeric" autocomplete="off" value="10000">
+            <div class="help">Between $500 and $5,000,000. Change it any time, for example when you add money.</div>
+          </div>
+          <button class="btn" id="saveCapital" type="button">Save amount</button>
+          <div class="msg" id="capitalMsg" role="status"></div>
+        </div>
+      </section>
+      <section>
         <h2>Alerts on this device</h2>
         <p class="sub" id="pushState">Checking…</p>
         <div class="panel">
@@ -203,7 +216,9 @@ input[type=text],input[type=password]{width:100%;padding:11px 12px;border:1px so
 <script>
 "use strict";
 const TZ = "Australia/Sydney";
-const START = 10000;
+const START = 10000;          // the paper portfolios run on $10,000
+let CAPITAL = START;           // your chosen amount; every dollar figure is scaled to it
+const toAmt = (v) => (v == null || isNaN(v)) ? v : v * CAPITAL / START;
 const $ = (s) => document.querySelector(s);
 const store = {
   get: (k) => { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } },
@@ -256,6 +271,9 @@ async function load() {
   try {
     const g = await gh("/gists/" + encodeURIComponent(store.get("gist")));
     const s = await readJson(g.files, "state.json");
+    const cfg = await readJson(g.files, "settings.json");
+    if (cfg && cfg.capital > 0) CAPITAL = Number(cfg.capital);
+    $("#capital").value = String(CAPITAL);
     if (!s || !s.B) { renderEmpty("Connected. The engine hasn't saved any results yet: run it once from GitHub Actions (Run workflow, check now)."); STATE = s; return; }
     STATE = s;
     render(s);
@@ -317,11 +335,11 @@ function render(s) {
 
   const orderRows = items.map((x) => {
     const isCash = !!x.cash;
-    const det = x.whole ? `Sell all units (about ${num(x.units)} at ${money(x.price, 2)})`
+    const det = x.whole ? `Sell all units (about ${num(toAmt(x.units))} at ${money(x.price, 2)})`
       : isCash ? (x.side === "BUY" ? "Cash ETF: holds the uninvested money" : "Cash ETF: funds the purchases")
-      : `About ${num(x.units)} units at ${money(x.price, 2)}`;
+      : `About ${num(toAmt(x.units))} units at ${money(x.price, 2)}`;
     return `<li class="order"><span class="side ${x.side}">${x.side === "BUY" ? "Buy" : "Sell"}</span>
-      <span class="tic">${esc(x.ticker)}</span><span class="amt">${money(x.value)}</span><span class="det">${esc(det)}</span></li>`;
+      <span class="tic">${esc(x.ticker)}</span><span class="amt">${money(toAmt(x.value))}</span><span class="det">${esc(det)}</span></li>`;
   }).join("");
 
   const ticket = `
@@ -339,7 +357,7 @@ function render(s) {
   const score = (key, name, color, note) => {
     const v = last[key]; const c = v / START - 1;
     return `<div class="score"><div class="name"><span class="swatch" style="background:${color}"></span>${name}</div>
-      <div><span class="val">${money(v)}</span> <span class="chg ${cls(c)}">${pct(c)}</span></div></div>`;
+      <div><span class="val">${money(toAmt(v))}</span> <span class="chg ${cls(c)}">${pct(c)}</span></div></div>`;
   };
 
   const alerts = (s.alerts || []).slice(0, 12).map((a) =>
@@ -359,7 +377,7 @@ function render(s) {
     ${ticket}
     <section style="margin-top:26px">
       <h2>Paper results</h2>
-      <p class="sub">Each started with ${money(START)} on ${esc(dayName(s.started))}, after a 0.15% trading cost on every trade.</p>
+      <p class="sub">Each started on ${esc(dayName(s.started))} and pays a 0.15% trading cost on every trade. Shown for your amount of ${money(CAPITAL)}${CAPITAL !== START ? " (the tool runs on $10,000 and scales every figure, so percentages are unchanged)" : ""}.</p>
       <div class="panel">
         <div class="scores">
           ${score("B", "Strategy B", "var(--navy)")}
@@ -400,22 +418,22 @@ function holdingsBlock(title, sub, S, showRank) {
   const rows = v.holdings.map((x) => {
     const g = x.gain, gp = (x.cost ? x.gain / x.cost : null);
     return `<tr><td><div class="t">${esc(x.ticker)}</div><div class="th">${esc(x.theme)}${showRank && x.rank ? ", rank " + x.rank : ""}</div></td>
-      <td class="r">${money(x.value)}<div class="bar" aria-hidden="true"><i style="width:${Math.min(100, x.weight * 100).toFixed(1)}%"></i></div></td>
+      <td class="r">${money(toAmt(x.value))}<div class="bar" aria-hidden="true"><i style="width:${Math.min(100, x.weight * 100).toFixed(1)}%"></i></div></td>
       <td class="r">${(x.weight * 100).toFixed(1)}%</td>
-      <td class="r ${cls(g)}">${signed$(g)}<div class="th">${pct(gp)}</div></td></tr>`;
+      <td class="r ${cls(g)}">${signed$(toAmt(g))}<div class="th">${pct(gp)}</div></td></tr>`;
   }).join("");
-  const cashRow = `<tr><td><div class="t">AAA</div><div class="th">Cash ETF</div></td><td class="r">${money(v.cash)}</td><td class="r">${(v.cash / v.equity * 100).toFixed(1)}%</td><td></td></tr>`;
+  const cashRow = `<tr><td><div class="t">AAA</div><div class="th">Cash ETF</div></td><td class="r">${money(toAmt(v.cash))}</td><td class="r">${(v.cash / v.equity * 100).toFixed(1)}%</td><td></td></tr>`;
   return `<section><h2>${esc(title)}</h2><p class="sub">${esc(sub)}</p>
     <div class="panel scroll"><table><thead><tr><th>ETF</th><th class="r">Value</th><th class="r">Share</th><th class="r">Gain</th></tr></thead>
     <tbody>${rows}${cashRow}</tbody></table>
-    <p class="note" style="margin:10px 0 0">Total ${money(v.equity)}</p></div></section>`;
+    <p class="note" style="margin:10px 0 0">Total ${money(toAmt(v.equity))}</p></div></section>`;
 }
 
 function tradesBlock(B, A) {
   const all = [...(B.trades || []).map((t) => ({ ...t, s: "B" })), ...(A.trades || []).map((t) => ({ ...t, s: "A" }))]
     .sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 30);
   const rows = all.map((t) => `<tr><td>${esc(dayName(t.date))}</td><td>${t.s}</td><td><span class="side ${t.side}">${t.side === "BUY" ? "Buy" : "Sell"}</span></td>
-    <td class="t">${esc(t.ticker)}</td><td class="r">${money(t.value)}</td></tr>`).join("");
+    <td class="t">${esc(t.ticker)}</td><td class="r">${money(toAmt(t.value))}</td></tr>`).join("");
   return `<section><h2>Trade log</h2><p class="sub">Paper trades, newest first.</p><div class="panel scroll"><table>
     <thead><tr><th>Date</th><th>Strategy</th><th>Side</th><th>ETF</th><th class="r">Value</th></tr></thead>
     <tbody>${rows || `<tr><td colspan="5">No trades yet.</td></tr>`}</tbody></table></div></section>`;
@@ -438,9 +456,9 @@ function chart(h) {
   const base = y(START);
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Value of each paper portfolio over time">
     <line x1="${P.l}" x2="${W - P.r}" y1="${base}" y2="${base}" stroke="var(--line)" stroke-width="1"/>
-    <text x="${P.l - 6}" y="${base + 4}" text-anchor="end" font-size="12" fill="var(--muted)">$10k</text>
-    <text x="${P.l - 6}" y="${P.t + 10}" text-anchor="end" font-size="12" fill="var(--muted)">${kfmt(hi)}</text>
-    <text x="${P.l - 6}" y="${H - P.b}" text-anchor="end" font-size="12" fill="var(--muted)">${kfmt(lo)}</text>
+    <text x="${P.l - 6}" y="${base + 4}" text-anchor="end" font-size="12" fill="var(--muted)">${kfmt(CAPITAL)}</text>
+    <text x="${P.l - 6}" y="${P.t + 10}" text-anchor="end" font-size="12" fill="var(--muted)">${kfmt(toAmt(hi))}</text>
+    <text x="${P.l - 6}" y="${H - P.b}" text-anchor="end" font-size="12" fill="var(--muted)">${kfmt(toAmt(lo))}</text>
     <text x="${P.l}" y="${H - 6}" font-size="12" fill="var(--muted)">${esc(dayName(h[0].d))}</text>
     <text x="${W - P.r}" y="${H - 6}" text-anchor="end" font-size="12" fill="var(--muted)">${esc(dayName(h[h.length - 1].d))}</text>
     ${lines}</svg>`;
@@ -471,6 +489,21 @@ $("#forget").addEventListener("click", () => {
   store.del("gist"); store.del("token"); $("#gist").value = ""; $("#token").value = "";
   $("#saveMsg").className = "msg"; $("#saveMsg").textContent = "Removed from this device.";
   STATE = null; renderEmpty();
+});
+
+$("#saveCapital").addEventListener("click", async () => {
+  const m = $("#capitalMsg");
+  const v = Number(String($("#capital").value).replace(/[$,\s]/g, ""));
+  if (!isFinite(v) || v < 500 || v > 5000000) { m.className = "msg bad"; m.textContent = "Enter an amount between $500 and $5,000,000."; return; }
+  if (!store.get("gist") || !store.get("token")) { m.className = "msg bad"; m.textContent = "Connect your Gist above first."; return; }
+  m.className = "msg"; m.textContent = "Saving…";
+  try {
+    await gh("/gists/" + encodeURIComponent(store.get("gist")), { method: "PATCH",
+      body: JSON.stringify({ files: { "settings.json": { content: JSON.stringify({ capital: Math.round(v), updated: new Date().toISOString() }) } } }) });
+    CAPITAL = Math.round(v); $("#capital").value = String(CAPITAL);
+    if (STATE && STATE.B) render(STATE);
+    m.className = "msg ok"; m.textContent = `Saved. Everything is now shown for ${money(CAPITAL)}, and alerts will use it from the next check.`;
+  } catch (e) { m.className = "msg bad"; m.textContent = e.message; }
 });
 
 /* ---------- push alerts ---------- */
