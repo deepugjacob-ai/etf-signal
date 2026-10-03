@@ -34,13 +34,29 @@ def buy_value(pf: dict, k: str, amount: float, prices: dict) -> float:
     return amount
 
 
+def needs_trim(pf: dict, prices: dict) -> bool:
+    return any(w > C.B_TRIM_ABOVE for w in weights(pf, prices).values())
+
+
 def rebalance_b(pf: dict, keep: list, new_weights: dict, prices: dict) -> list:
-    """Sell what left the list, buy the newcomers at their target weight. Existing holdings are left alone.
-    If cash is short, newcomers are scaled down together so total investment never exceeds 100%."""
+    """Sell what left the list, trim any holding above 40% back to 30%, then buy the newcomers at their target
+    weight. Other existing holdings are left alone. If cash is short, newcomers are scaled down together so the
+    portfolio never exceeds 100% invested."""
     trades = []
     for k in [k for k in pf["units"] if k not in keep]:
         g = sell_all(pf, k, prices)
-        trades.append({"side": "SELL", "ticker": k, "value": g})
+        trades.append({"side": "SELL", "ticker": k, "value": g, "whole": True})
+    eq = value(pf, prices)
+    for k in list(pf["units"]):
+        w = pf["units"][k] * prices[k] / eq
+        if w > C.B_TRIM_ABOVE:
+            cut = (w - C.B_MAX_WEIGHT) * eq
+            frac = cut / (pf["units"][k] * prices[k])
+            pf["units"][k] -= cut / prices[k]
+            pf["cash_units"] += cut * (1 - C.COST) / prices[C.CASH]
+            if pf["meta"].get(k, {}).get("cost"):
+                pf["meta"][k]["cost"] *= (1 - frac)
+            trades.append({"side": "SELL", "ticker": k, "value": cut, "whole": False, "trim": True})
     eq = value(pf, prices)
     want = {k: w * eq for k, w in new_weights.items()}
     avail = pf["cash_units"] * prices[C.CASH]

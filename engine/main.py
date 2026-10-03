@@ -9,6 +9,7 @@ from . import portfolio as PF
 from .data import load as load_data
 from .indicators import clean_prices, compute
 from .notify import ensure_keys, send_all
+from . import mine as MINE
 from .store import Store
 from .strategies import b_new_weights, decide_a_entries, decide_a_exits, decide_b
 
@@ -48,7 +49,7 @@ def make_orders(trades, raw_last, cash_leg):
         p = raw_last.get(tr["ticker"])
         items.append({"side": tr["side"], "ticker": tr["ticker"], "value": round(tr["value"], 2),
                       "price": p, "units": round(tr["value"] / p, 2) if p else None,
-                      "whole": tr["side"] == "SELL"})
+                      "whole": tr["side"] == "SELL" and tr.get("whole", True), "trim": bool(tr.get("trim"))})
     if abs(cash_leg) >= 1:
         p = raw_last.get(C.CASH)
         items.append({"side": "BUY" if cash_leg > 0 else "SELL", "ticker": C.CASH, "value": round(abs(cash_leg), 2),
@@ -63,6 +64,8 @@ def describe(items, scale=1.0):
         o = {**o, "value": o["value"] * scale}
         if o.get("cash"):
             parts.append(f"{'Put' if o['side']=='BUY' else 'Take'} {money(o['value'])} {'in' if o['side']=='BUY' else 'from'} {o['ticker']}")
+        elif o.get("trim"):
+            parts.append(f"Sell {money(o['value'])} of {o['ticker']} (trim to 30%)")
         elif o["whole"]:
             parts.append(f"Sell all {o['ticker']} (~{money(o['value'])})")
         else:
@@ -91,15 +94,16 @@ def add_alert(state, alerts, now, title, body, tag):
     state["alerts"] = ([a] + state.get("alerts", []))[:40]
 
 
-def run(state, now, key, alerts, scale=1.0):
+def run(state, now, key, alerts, scale=1.0, capital=C.START_CAPITAL, mytrades=None):
     today = now.date()
-    adj, turnover, raw_last, info = load_data(key, now)
+    adj, turnover, raw_last, info, close = load_data(key, now)
     px = clean_prices(adj)
     ind = compute(px, turnover)
     t = px.index[-1]
     tstr = t.date().isoformat()
     prices = px.ffill().loc[t].to_dict()
     open_today = info["market_open"]
+    tradable = set(info["tradable"]) if info.get("tradable") else None
 
     first = "B" not in state
     if first:
@@ -126,7 +130,7 @@ def run(state, now, key, alerts, scale=1.0):
     # Strategy B: weekly (Friday from 3pm), catch-up if a week was missed, and at start
     B = state["B"]
     held = list(B["pf"]["units"])
-    keep, ranks, n_max = decide_b(ind, t, held)
+    keep, ranks, n_max = decide_b(ind, t, held, tradable)
     lastB = dt.date.fromisoformat(B["last"]) if B.get("last") else None
     due_B = first or (open_today and (
         (now.weekday() == 4 and after_decision(now) and lastB != today) or
@@ -134,7 +138,7 @@ def run(state, now, key, alerts, scale=1.0):
     if due_B:
         cash_before = B["pf"]["cash_units"] * prices[C.CASH]
         trades = []
-        if set(keep) != set(held):
+        if set(keep) != set(held) or PF.needs_trim(B["pf"], prices):
             new = [k for k in keep if k not in held]
             trades = PF.rebalance_b(B["pf"], keep, b_new_weights(ind, t, keep, new), prices)
             for tr in trades:
@@ -143,7 +147,11 @@ def run(state, now, key, alerts, scale=1.0):
         cash_after = B["pf"]["cash_units"] * prices[C.CASH]
         cash_leg = cash_after if first else (cash_after - cash_before)
         items = make_orders(trades, raw_last, cash_leg if trades else 0)
+        for o in items:
+            o["key"] = f"{tstr}|{o['side']}|{o['ticker']}"
         B["orders"] = {"date": tstr, "time": now.isoformat(), "items": items, "keep": keep, "regime": reg}
+        if items:
+            B["order_log"] = ([{"date": tstr, "items": items}] + B.get("order_log", []))[:100]
         B["trades"] = (B["trades"] + [{"date": tstr, **tr, "price": raw_last.get(tr["ticker"])} for tr in trades])[-200:]
         B["last"] = today.isoformat()
         if trades:
@@ -161,7 +169,7 @@ def run(state, now, key, alerts, scale=1.0):
         for k in decide_a_exits(ind, t, days):
             trades.append({"side": "SELL", "ticker": k, "value": PF.sell_all(A["pf"], k, prices)})
             pos.pop(k)
-        for k in decide_a_entries(ind, t, list(pos)):
+        for k in decide_a_entries(ind, t, list(pos), tradable):
             g = PF.buy_value(A["pf"], k, PF.value(A["pf"], prices) / C.A_MAX_POS, prices)
             if g > 0:
                 pos[k] = tstr
@@ -170,7 +178,7 @@ def run(state, now, key, alerts, scale=1.0):
         A["last"] = today.isoformat()
         A["orders"] = {"date": tstr, "time": now.isoformat(), "items": make_orders(trades, raw_last, 0)}
         A["trades"] = (A["trades"] + [{"date": tstr, **tr, "price": raw_last.get(tr["ticker"])} for tr in trades])[-200:]
-        if trades:
+        if trades and C.A_ALERTS:
             add_alert(state, alerts, now, "Strategy A (paper): trades", describe(A["orders"]["items"], scale), "A")
 
     # Buy-and-hold comparison, rebalanced monthly
@@ -198,6 +206,10 @@ def run(state, now, key, alerts, scale=1.0):
                           "heldB": k in B["pf"]["units"]} for k, r in sorted(ranks.items(), key=lambda x: x[1])[:20]]
     state["n_max"] = n_max
     state["market"] = info
+    state["rules_version"] = C.RULES_VERSION
+    state["universe"] = [{"ticker": k, "theme": C.THEME_OF[k]} for k in C.UNIVERSE] + [{"ticker": C.CASH, "theme": "Cash"}]
+    state["prices"] = {k: v for k, v in raw_last.items() if k in C.UNIVERSE or k == C.CASH}
+    state["mine"] = MINE.compute(mytrades or [], px.ffill(), close.ffill(), capital, state["history"], today)
     state["prices_date"] = tstr
 
 
@@ -215,6 +227,7 @@ def main(argv=None):
     subs = store.read("subscriptions.json", []) or []
     state = store.read("state.json", {}) or {}
     settings = store.read("settings.json", {}) or {}
+    mytrades = store.read("mytrades.json", []) or []
     try:
         capital = float(settings.get("capital") or C.START_CAPITAL)
     except (TypeError, ValueError):
@@ -240,7 +253,7 @@ def main(argv=None):
     try:
         if not key:
             raise RuntimeError("EODHD_API_KEY is not set")
-        run(state, now, key, alerts, scale)
+        run(state, now, key, alerts, scale, capital, mytrades)
         state["capital"] = capital
         state["status"] = {**state.get("status", {}), "ok": True, "checked": now.isoformat(), "message": "Up to date"}
     except Exception as e:

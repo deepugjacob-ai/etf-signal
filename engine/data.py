@@ -62,6 +62,23 @@ def quotes(key: str):
     return out
 
 
+def dividends_today(key: str, today: dt.date) -> dict:
+    """Cash distributions going ex today, per unit, for our ETFs (one bulk call). {} if unavailable."""
+    try:
+        d = _get(f"{BASE}/eod-bulk-last-day/AU", {"api_token": key, "type": "dividends",
+                                                   "date": today.isoformat(), "fmt": "json"}, tries=2)
+    except RuntimeError:
+        return {}
+    out = {}
+    for x in d if isinstance(d, list) else []:
+        if x.get("date") == today.isoformat() and x.get("code") in C.UNIVERSE + [C.CASH]:
+            try:
+                out[x["code"]] = out.get(x["code"], 0.0) + float(x.get("unadjustedValue") or x.get("dividend"))
+            except (TypeError, ValueError):
+                pass
+    return out
+
+
 def load(key: str, now: dt.datetime):
     """Returns adjusted prices (with today's delayed price appended when the market traded today),
     $ turnover, raw last prices (for order sizes), and info about data freshness."""
@@ -88,9 +105,12 @@ def load(key: str, now: dt.datetime):
         newest = max(newest, qtime) if newest else qtime
     market_open = fresh >= 0.5 * len(symbols())
     tday = pd.Timestamp(today)
+    divs = dividends_today(key, today) if market_open else {}
     if market_open and tday not in adj.index:
         ratio = (adj.ffill().iloc[-1] / close.ffill().iloc[-1])
-        row = pd.Series({s: live_raw[s] * ratio[s] for s in live_raw}, dtype=float)
+        # Ex-dividend fix: on an ex-date the market price drops by the distribution, which the history does not
+        # yet reflect. Adding it back gives the true total-return price, so no false fall below the trend line.
+        row = pd.Series({s: (live_raw[s] + divs.get(s, 0.0)) * ratio[s] for s in live_raw}, dtype=float)
         adj.loc[tday] = row
         close.loc[tday] = pd.Series(live_raw, dtype=float)
         turnover.loc[tday] = float("nan")
@@ -98,5 +118,6 @@ def load(key: str, now: dt.datetime):
     raw_last = close.ffill().iloc[-1].to_dict()
     info = {"market_open": bool(market_open), "fresh_quotes": fresh, "rejected": rejected,
             "quote_time": newest.isoformat() if newest else None,
-            "last_daily_close": eod_last}
-    return adj, turnover, raw_last, info
+            "last_daily_close": eod_last, "ex_dividend_today": divs,
+            "tradable": sorted(live_raw) if market_open else None}
+    return adj, turnover, raw_last, info, close
