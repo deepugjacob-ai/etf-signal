@@ -56,9 +56,11 @@ def make_orders(trades, raw_last, cash_leg):
     return items
 
 
-def describe(items):
+def describe(items, scale=1.0):
+    """Alert text. Dollar amounts are scaled to the user's chosen investment amount."""
     parts = []
     for o in items:
+        o = {**o, "value": o["value"] * scale}
         if o.get("cash"):
             parts.append(f"{'Put' if o['side']=='BUY' else 'Take'} {money(o['value'])} {'in' if o['side']=='BUY' else 'from'} {o['ticker']}")
         elif o["whole"]:
@@ -89,7 +91,7 @@ def add_alert(state, alerts, now, title, body, tag):
     state["alerts"] = ([a] + state.get("alerts", []))[:40]
 
 
-def run(state, now, key, alerts):
+def run(state, now, key, alerts, scale=1.0):
     today = now.date()
     adj, turnover, raw_last, info = load_data(key, now)
     px = clean_prices(adj)
@@ -109,7 +111,7 @@ def run(state, now, key, alerts):
                       "month": tstr[:7]},
         })
         add_alert(state, alerts, now, "Paper trading started",
-                  f"Both strategies start with {money(C.START_CAPITAL)} of paper money.", "start")
+                  f"Both strategies start with {money(C.START_CAPITAL * scale)} of paper money.", "start")
 
     # Market regime
     reg = ind["regime"].iloc[-1]
@@ -145,7 +147,7 @@ def run(state, now, key, alerts):
         B["trades"] = (B["trades"] + [{"date": tstr, **tr, "price": raw_last.get(tr["ticker"])} for tr in trades])[-200:]
         B["last"] = today.isoformat()
         if trades:
-            add_alert(state, alerts, now, "Strategy B: new orders", describe(items), "B")
+            add_alert(state, alerts, now, "Strategy B: new orders", describe(items, scale), "B")
         else:
             add_alert(state, alerts, now, "Strategy B: no changes",
                       "Keep holding " + (", ".join(keep) if keep else f"everything in {C.CASH}") + ".", "B")
@@ -169,7 +171,7 @@ def run(state, now, key, alerts):
         A["orders"] = {"date": tstr, "time": now.isoformat(), "items": make_orders(trades, raw_last, 0)}
         A["trades"] = (A["trades"] + [{"date": tstr, **tr, "price": raw_last.get(tr["ticker"])} for tr in trades])[-200:]
         if trades:
-            add_alert(state, alerts, now, "Strategy A (paper): trades", describe(A["orders"]["items"]), "A")
+            add_alert(state, alerts, now, "Strategy A (paper): trades", describe(A["orders"]["items"], scale), "A")
 
     # Buy-and-hold comparison, rebalanced monthly
     bench = state["bench"]
@@ -212,6 +214,14 @@ def main(argv=None):
     keys = ensure_keys(store)
     subs = store.read("subscriptions.json", []) or []
     state = store.read("state.json", {}) or {}
+    settings = store.read("settings.json", {}) or {}
+    try:
+        capital = float(settings.get("capital") or C.START_CAPITAL)
+    except (TypeError, ValueError):
+        capital = C.START_CAPITAL
+    if not 500 <= capital <= 5_000_000:
+        capital = C.START_CAPITAL
+    scale = capital / C.START_CAPITAL
     claim = os.environ.get("VAPID_SUB") or "https://github.com"
 
     if a.test_push:
@@ -230,7 +240,8 @@ def main(argv=None):
     try:
         if not key:
             raise RuntimeError("EODHD_API_KEY is not set")
-        run(state, now, key, alerts)
+        run(state, now, key, alerts, scale)
+        state["capital"] = capital
         state["status"] = {**state.get("status", {}), "ok": True, "checked": now.isoformat(), "message": "Up to date"}
     except Exception as e:
         st = state.get("status", {})
