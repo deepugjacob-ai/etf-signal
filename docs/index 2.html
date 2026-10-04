@@ -1,0 +1,926 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ETF Signals</title>
+<meta name="theme-color" content="#22385F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Signals">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ground:#EEF1F5; --surface:#FFFFFF; --ink:#18212C; --muted:#5D6977; --line:#D8DEE6;
+  --navy:#22385F; --buy:#17694F; --buy-bg:#E1F1EA; --sell:#A8323E; --sell-bg:#F8E4E6;
+  --ochre:#8F6200; --ochre-bg:#F6EBD3; --A:#8A94A3; --M:#B07D12; --Y:#0F7C8C;
+  --c1:#22385F; --c2:#0F7C8C; --c3:#B07D12; --c4:#7A4E9C; --c5:#4F7A3A; --c6:#A8323E; --c7:#B9C2CE;
+  font-family:"Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color:var(--ink); background:var(--ground); -webkit-text-size-adjust:100%;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --ground:#10161D; --surface:#18202A; --ink:#E7ECF2; --muted:#95A2B1; --line:#2A3542;
+    --navy:#9DB4E4; --buy:#55C79F; --buy-bg:#16322A; --sell:#F08791; --sell-bg:#3A1D22;
+    --ochre:#E6B654; --ochre-bg:#352A12; --A:#7E8A99; --M:#E2B04A; --Y:#4FC7D6;
+    --c1:#9DB4E4; --c2:#4FC7D6; --c3:#E2B04A; --c4:#C39BE0; --c5:#93C878; --c6:#F08791; --c7:#4A5868;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--ground)}
+body{padding:env(safe-area-inset-top) env(safe-area-inset-right) calc(env(safe-area-inset-bottom) + 28px) env(safe-area-inset-left);
+  font-variant-numeric:tabular-nums; line-height:1.45}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--navy);outline-offset:2px;border-radius:6px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0 10px}
+.brand{font-weight:800;font-size:1.05rem;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.brand img{width:26px;height:26px;border-radius:7px}
+.refresh{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;font-size:.9rem;cursor:pointer}
+.refresh[disabled]{opacity:.6}
+
+nav{display:flex;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:18px;position:sticky;top:env(safe-area-inset-top);z-index:5;overflow-x:auto}
+nav button{flex:1;border:0;background:transparent;padding:9px 8px;border-radius:9px;font-size:.92rem;font-weight:500;color:var(--muted);cursor:pointer;white-space:nowrap}
+nav button[aria-selected="true"]{background:var(--navy);color:var(--surface)}
+@media (prefers-color-scheme: dark){nav button[aria-selected="true"]{color:#10161D}}
+@media (max-width:480px){nav button{font-size:.82rem;padding:8px 3px}}
+
+.banner{border-radius:12px;padding:12px 14px;margin-bottom:16px;font-size:.95rem}
+.banner.err{background:var(--sell-bg);color:var(--sell)}
+.banner.warn{background:var(--ochre-bg);color:var(--ochre)}
+.banner b{display:block;margin-bottom:2px}
+
+/* hero */
+.hero{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px 24px;padding:4px 0 18px}
+.hero .label{font-size:.95rem;color:var(--muted)}
+.regime{font-weight:800;font-size:clamp(2.8rem, 11vw, 5rem);line-height:.95;letter-spacing:-.045em;margin:2px 0 0}
+.regime.bull{color:var(--buy)} .regime.bear{color:var(--sell)} .regime.sideways{color:var(--ochre)} .regime.unknown{color:var(--muted)}
+.hero p{margin:6px 0 0;max-width:52ch}
+.facts{font-size:.9rem;color:var(--muted);display:grid;gap:2px;text-align:right}
+.facts strong{color:var(--ink);font-weight:500}
+@media (max-width:640px){.facts{text-align:left}}
+
+/* tiles */
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:22px}
+@media (max-width:820px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:13px 14px;min-width:0}
+.tile .k{font-size:.84rem;color:var(--muted);display:flex;align-items:center;gap:6px}
+.tile .v{font-weight:800;font-size:1.45rem;letter-spacing:-.02em;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .v.text{font-size:1.1rem;white-space:normal;line-height:1.2;padding:3px 0 2px}
+.tile .s{font-size:.84rem;color:var(--muted)}
+.tile.lead{background:var(--navy);border-color:var(--navy);color:var(--surface)}
+.tile.lead .k,.tile.lead .s{color:color-mix(in srgb, var(--surface) 78%, transparent)}
+@media (prefers-color-scheme: dark){.tile.lead{color:#10161D}.tile.lead .k,.tile.lead .s{color:#22303F}}
+.swatch{width:14px;height:3px;border-radius:2px;display:inline-block;flex:none}
+
+section{margin-bottom:26px}
+h2{font-size:1.15rem;font-weight:700;margin:0 0 4px;letter-spacing:-.01em}
+h3{font-size:1rem;font-weight:700;margin:0 0 8px}
+.sub{color:var(--muted);font-size:.92rem;margin:0 0 12px;max-width:70ch}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (max-width:820px){.grid2{grid-template-columns:1fr}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.86rem;color:var(--muted);margin-bottom:8px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+svg.chart{width:100%;height:auto;display:block}
+.chart-note{color:var(--muted);font-size:.9rem;margin:6px 0 0}
+.donut-wrap{display:flex;gap:14px;align-items:center}
+.donut-wrap svg{width:132px;height:132px;flex:none}
+.dl{list-style:none;margin:0;padding:0;font-size:.88rem;flex:1;min-width:0}
+.dl li{display:flex;align-items:center;gap:8px;padding:3px 0}
+.dl i{width:10px;height:10px;border-radius:3px;flex:none}
+.dl b{font-weight:500;margin-left:auto}
+
+/* ticket */
+.ticket{background:var(--surface);border-radius:18px;position:relative;border:1px solid var(--line)}
+.ticket-head{padding:16px 18px 14px;display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.ticket-head h2{margin:0}
+.ticket-head .when{color:var(--muted);font-size:.88rem;text-align:right}
+.perf{height:0;border-top:2px dashed var(--line);margin:0 18px;position:relative}
+.perf::before,.perf::after{content:"";position:absolute;top:-11px;width:20px;height:20px;border-radius:50%;background:var(--ground);border:1px solid var(--line)}
+.perf::before{left:-29px;clip-path:inset(0 0 0 50%)} .perf::after{right:-29px;clip-path:inset(0 50% 0 0)}
+.orders{list-style:none;margin:0;padding:6px 18px 4px}
+.order{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.order:last-child{border-bottom:0}
+.side{font-weight:700;font-size:.78rem;padding:4px 8px;border-radius:6px;min-width:44px;text-align:center;display:inline-block}
+.side.BUY{background:var(--buy-bg);color:var(--buy)} .side.SELL{background:var(--sell-bg);color:var(--sell)}
+.order .tic{font-weight:700;font-size:1.1rem}
+.order .det{grid-column:2 / 4;color:var(--muted);font-size:.88rem;margin-top:-2px}
+.order .amt{font-weight:700;font-size:1.1rem;text-align:right}
+.order .act{grid-column:1 / 4;display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:4px}
+.ticket-foot{padding:12px 18px 16px;color:var(--muted);font-size:.88rem;border-top:1px solid var(--line)}
+.none{padding:18px}
+.chip{font-size:.8rem;font-weight:500;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.chip.done{background:var(--buy-bg);color:var(--buy)} .chip.skip{background:var(--ochre-bg);color:var(--ochre)} .chip.open{background:var(--ground);color:var(--muted)}
+.mini{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 11px;font-size:.86rem;font-weight:500;cursor:pointer}
+.mini.primary{background:var(--navy);border-color:var(--navy);color:var(--surface)}
+@media (prefers-color-scheme: dark){.mini.primary{color:#10161D}}
+.recform{grid-column:1 / 4;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;background:var(--ground);border-radius:10px;padding:10px;margin-top:6px}
+.recform label{font-size:.8rem;color:var(--muted);font-weight:500;margin:0}
+.recform input{width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.recform .row{grid-column:1 / 4}
+
+table{width:100%;border-collapse:collapse;font-size:.94rem}
+th{font-weight:500;color:var(--muted);text-align:left;font-size:.82rem;padding:0 6px 8px;white-space:nowrap}
+td{padding:10px 6px;border-top:1px solid var(--line);vertical-align:top}
+th.r,td.r{text-align:right}
+td .t{font-weight:700} td .th{color:var(--muted);font-size:.82rem}
+.bar{height:5px;background:var(--line);border-radius:3px;margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--navy)}
+tr.held td{background:color-mix(in srgb, var(--buy-bg) 55%, transparent)}
+.tag{font-size:.78rem;font-weight:500;padding:2px 7px;border-radius:5px;white-space:nowrap}
+.tag.held{background:var(--buy-bg);color:var(--buy)} .tag.trend{color:var(--muted)} .tag.below{background:var(--sell-bg);color:var(--sell)}
+.tag.short{background:var(--ochre-bg);color:var(--ochre);white-space:normal;display:inline-block} .tag.long{background:var(--buy-bg);color:var(--buy)}
+.scroll{overflow-x:auto}
+.pos{color:var(--buy)} .neg{color:var(--sell)}
+
+.alerts{list-style:none;margin:0;padding:0}
+.alerts li{padding:12px 0;border-top:1px solid var(--line)}
+.alerts li:first-child{border-top:0}
+.alerts time{display:block;color:var(--muted);font-size:.82rem}
+.alerts b{display:block}
+
+label{display:block;font-weight:500;margin:0 0 6px}
+input[type=text],input[type=password],input[type=number],input[type=date],select{width:100%;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:var(--ground)}
+.field{margin-bottom:14px}
+.fields{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;align-items:end}
+@media (max-width:820px){.fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.help{color:var(--muted);font-size:.86rem;margin-top:5px}
+.btn{border:0;border-radius:10px;padding:11px 16px;font-weight:700;cursor:pointer;background:var(--navy);color:var(--surface)}
+@media (prefers-color-scheme: dark){.btn{color:#10161D}}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.msg{margin-top:10px;font-size:.92rem}
+.msg.ok{color:var(--buy)} .msg.bad{color:var(--sell)}
+.note{font-size:.88rem;color:var(--muted)}
+[hidden]{display:none!important}
+@media (max-width:480px){.hide-sm{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><img src="icon-192.png" alt="">ETF Signals <span class="chip open" id="modeChip" hidden></span></div>
+    <button class="refresh" id="refresh" type="button">Refresh</button>
+  </header>
+
+  <nav role="tablist" aria-label="Sections">
+    <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
+    <button role="tab" data-tab="orders" aria-selected="false">Orders</button>
+    <button role="tab" data-tab="holdings" aria-selected="false">Holdings</button>
+    <button role="tab" data-tab="rankings" aria-selected="false">Rankings</button>
+    <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
+  </nav>
+
+  <div id="banner"></div>
+
+  <main>
+    <div data-panel="overview"><div id="overview"><p class="sub">Loading…</p></div></div>
+    <div data-panel="orders" hidden><div id="orders"></div></div>
+    <div data-panel="holdings" hidden><div id="holdings"></div></div>
+    <div data-panel="rankings" hidden><div id="rankings"></div></div>
+    <div data-panel="settings" hidden>
+      <section>
+        <h2>Connect your data</h2>
+        <p class="sub">The engine saves its results to your private GitHub Gist. Enter the same Gist ID and token you saved as GitHub secrets. They stay on this device only.</p>
+        <div class="panel">
+          <div class="field">
+            <label for="gist">Gist ID</label>
+            <input id="gist" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. 3f2a9c…">
+            <div class="help">The long code at the end of your gist's web address.</div>
+          </div>
+          <div class="field">
+            <label for="token">GitHub token</label>
+            <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_…">
+            <div class="help">A classic token with only the “gist” permission.</div>
+          </div>
+          <div class="row">
+            <button class="btn" id="save" type="button">Save and load</button>
+            <button class="btn ghost" id="forget" type="button">Forget on this device</button>
+          </div>
+          <div class="msg" id="saveMsg" role="status"></div>
+        </div>
+      </section>
+      <section>
+        <h2>Trading mode</h2>
+        <p class="sub">In paper mode the tool only tracks a $10,000 paper portfolio. In real-money mode it also gives you your own orders, sized from what you have actually recorded buying and selling, and your alerts become those orders.</p>
+        <div class="panel">
+          <div class="row" role="radiogroup" aria-label="Trading mode">
+            <label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="radio" name="mode" value="paper"> Paper only</label>
+            <label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="radio" name="mode" value="real"> Real money</label>
+          </div>
+          <div class="help">In real-money mode, set the investment amount below to the cash you've put aside for this strategy. Record every trade with “I did this” so your next orders are right.</div>
+          <div class="row" style="margin-top:12px"><button class="btn" id="saveMode" type="button">Save mode</button></div>
+          <div class="msg" id="modeMsg" role="status"></div>
+        </div>
+      </section>
+      <section>
+        <h2>Investment amount</h2>
+        <p class="sub">How much you plan to put into Strategy B. Recommended orders and results are shown for this amount, and it is the starting cash for your own trade record. It's saved to your Gist, so phone and laptop match.</p>
+        <div class="panel">
+          <div class="field">
+            <label for="capital">Amount (A$)</label>
+            <input id="capital" type="text" inputmode="numeric" autocomplete="off" value="10000">
+            <div class="help">Between $500 and $5,000,000. Change it any time, for example when you add money.</div>
+          </div>
+          <button class="btn" id="saveCapital" type="button">Save amount</button>
+          <div class="msg" id="capitalMsg" role="status"></div>
+        </div>
+      </section>
+      <section>
+        <h2>Alerts on this device</h2>
+        <p class="sub" id="pushState">Checking…</p>
+        <div class="panel">
+          <div class="row">
+            <button class="btn" id="enablePush" type="button">Turn on alerts</button>
+            <button class="btn ghost" id="disablePush" type="button">Turn off alerts</button>
+          </div>
+          <div class="msg" id="pushMsg" role="status"></div>
+          <p class="note">On iPhone, alerts only work from the Home Screen app: in Safari tap Share, then Add to Home Screen, open Signals from the icon, and turn alerts on there. To check they work, open your repository on GitHub, go to Actions, choose Signal engine, Run workflow, and pick “test alert”.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+<script>
+"use strict";
+const TZ = "Australia/Sydney";
+const START = 10000;           // paper portfolios run on $10,000
+let CAPITAL = START;           // your chosen amount
+let CFG = {};                  // settings.json: capital, mode ("paper" | "real"), recalc
+const isReal = () => CFG.mode === "real";
+let STATE = null;              // engine results (state.json)
+let TRADES = [];               // your recorded trades (mytrades.json)
+const $ = (s) => document.querySelector(s);
+const store = {
+  get: (k) => { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} },
+  del: (k) => { try { localStorage.removeItem(k); } catch (e) {} },
+};
+
+/* ---------- formatting ---------- */
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const bad = (v) => v == null || typeof v !== "number" || isNaN(v);
+const money = (v, dp = 0) => bad(v) ? "–" : v.toLocaleString("en-AU", { style: "currency", currency: "AUD", minimumFractionDigits: dp, maximumFractionDigits: dp });
+const signed$ = (v) => bad(v) ? "–" : (v >= 0 ? "+" : "−") + money(Math.abs(v));
+const pct = (v, dp = 1) => bad(v) ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v * 100).toFixed(dp) + "%";
+const cls = (v) => bad(v) ? "" : v > 0 ? "pos" : v < 0 ? "neg" : "";
+const num = (v, dp = 2) => bad(v) ? "–" : v.toLocaleString("en-AU", { minimumFractionDigits: dp, maximumFractionDigits: dp });
+const toAmt = (v) => bad(v) ? v : v * CAPITAL / START;     // paper dollars -> your amount
+const kfmt = (v) => bad(v) ? "" : "$" + (Math.abs(v) >= 1e6 ? (v / 1e6).toFixed(2) + "m" : (v / 1000).toFixed(1) + "k");
+function sydParts(d = new Date()) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-AU", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", weekday: "short", hourCycle: "h23" }).formatToParts(d).map((x) => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, wd: p.weekday, h: +p.hour, m: +p.minute };
+}
+const when = (iso) => iso ? new Date(iso).toLocaleString("en-AU", { timeZone: TZ, weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "–";
+const dayName = (ymd) => ymd ? new Date(ymd + "T12:00:00Z").toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }) : "–";
+const dateLong = (ymd) => ymd ? new Date(ymd + "T12:00:00Z").toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "–";
+const daysBetween = (a, b) => Math.round((new Date(b + "T12:00:00Z") - new Date(a + "T12:00:00Z")) / 86400000);
+const addDays = (ymd, n) => new Date(new Date(ymd + "T12:00:00Z").getTime() + n * 86400000).toISOString().slice(0, 10);
+
+/* ---------- GitHub gist access ---------- */
+async function gh(path, opts = {}) {
+  const token = store.get("token");
+  const r = await fetch("https://api.github.com" + path, {
+    ...opts, cache: "no-store",
+    headers: { "Authorization": "Bearer " + token, "Accept": "application/vnd.github+json", ...(opts.body ? { "Content-Type": "application/json" } : {}) },
+  });
+  if (r.status === 401) throw new Error("GitHub rejected the token. Check it in Settings and that it has the gist permission.");
+  if (r.status === 404) throw new Error("Gist not found. Check the Gist ID in Settings.");
+  if (!r.ok) throw new Error(`GitHub returned an error (${r.status}). Try Refresh in a minute.`);
+  return r.json();
+}
+async function readJson(files, name) {
+  const f = files[name];
+  if (!f) return null;
+  let txt = f.content;
+  if (f.truncated) txt = await (await fetch(f.raw_url, { cache: "no-store" })).text();
+  return txt && txt.trim() ? JSON.parse(txt) : null;
+}
+const gistPath = () => "/gists/" + encodeURIComponent(store.get("gist"));
+
+/* Read the latest trade list, change it, save it. Re-reading first means a phone and a laptop can't overwrite each other. */
+async function mutateTrades(fn) {
+  const g = await gh(gistPath());
+  let list = (await readJson(g.files, "mytrades.json")) || [];
+  list = fn(list);
+  await gh(gistPath(), { method: "PATCH", body: JSON.stringify({ files: { "mytrades.json": { content: JSON.stringify(list) } } }) });
+  TRADES = list;
+  render();
+}
+const newId = () => "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+/* ---------- load ---------- */
+async function load() {
+  const btn = $("#refresh");
+  if (!store.get("gist") || !store.get("token")) { showTab("settings"); renderEmpty(); return; }
+  btn.disabled = true; btn.textContent = "Loading…";
+  try {
+    const g = await gh(gistPath());
+    const s = await readJson(g.files, "state.json");
+    const cfg = await readJson(g.files, "settings.json");
+    CFG = cfg || {};
+    if (cfg && cfg.capital > 0) CAPITAL = Number(cfg.capital);
+    syncModeUI();
+    $("#capital").value = String(CAPITAL);
+    TRADES = (await readJson(g.files, "mytrades.json")) || [];
+    STATE = s;
+    if (!s || !s.B) { renderEmpty("Connected. The engine hasn't saved any results yet: run it once from GitHub Actions (Run workflow, check now)."); return; }
+    render();
+  } catch (e) {
+    banner("err", "Couldn't load your data", e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "Refresh";
+    updatePushState();
+  }
+}
+function banner(kind, title, text) {
+  $("#banner").innerHTML = kind ? `<div class="banner ${kind}" role="alert"><b>${esc(title)}</b>${esc(text)}</div>` : "";
+}
+function renderEmpty(text) {
+  const t = text || "Connect your Gist in Settings to see this week's signals.";
+  $("#overview").innerHTML = `<section class="hero"><div><div class="regime unknown">${text ? "Waiting" : "Not connected"}</div><p>${esc(t)}</p></div></section>`;
+  $("#orders").innerHTML = ""; $("#holdings").innerHTML = ""; $("#rankings").innerHTML = "";
+}
+
+/* ---------- your trades: bookkeeping (first in, first out) ---------- */
+function book(trades, prices) {
+  const known = STATE && STATE.universe ? new Set(STATE.universe.map((u) => u.ticker)) : null;
+  const done = trades.filter((t) => t.status === "done" && t.units > 0 && t.price > 0 && (!known || known.has(t.ticker)))
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.side === "BUY" ? -1 : 1));
+  const lots = {}; let cash = CAPITAL; const realised = []; const today = sydParts().date;
+  for (const t of done) {
+    if (t.side === "BUY") { cash -= t.units * t.price; (lots[t.ticker] = lots[t.ticker] || []).push({ date: t.date, units: +t.units, price: +t.price }); }
+    else {
+      cash += t.units * t.price; let left = +t.units;
+      for (const lot of (lots[t.ticker] || [])) {
+        if (left <= 1e-9) break;
+        const take = Math.min(left, lot.units);
+        realised.push({ ticker: t.ticker, date: t.date, gain: take * (t.price - lot.price), days: daysBetween(lot.date, t.date) });
+        lot.units -= take; left -= take;
+      }
+      lots[t.ticker] = (lots[t.ticker] || []).filter((l) => l.units > 1e-9);
+    }
+  }
+  const holdings = Object.entries(lots).filter(([, ls]) => ls.length).map(([k, ls]) => {
+    const units = ls.reduce((a, l) => a + l.units, 0), cost = ls.reduce((a, l) => a + l.units * l.price, 0);
+    const price = prices && prices[k], value = price ? units * price : null;
+    const lotv = ls.map((l) => ({ ...l, days: daysBetween(l.date, today), longFrom: addDays(l.date, 366) }));
+    return { ticker: k, units, cost, price, value, gain: value == null ? null : value - cost, lots: lotv };
+  }).sort((a, b) => (b.value || 0) - (a.value || 0));
+  const value = cash + holdings.reduce((a, h) => a + (h.value || 0), 0);
+  return { holdings, cash, value, realised, count: done.length };
+}
+
+/* ---------- did you follow the orders? ---------- */
+function adherence(s) {
+  const byKey = {}; TRADES.forEach((t) => { if (t.order_key) byKey[t.order_key] = t; });
+  const rows = []; const seen = new Set();
+  const real = isReal();
+  const logs = ((real ? s.B.real_order_log : s.B.order_log) || []).slice();
+  const cur = real ? s.B.real_orders : s.B.orders;
+  if (cur && (cur.items || []).length && !logs.some((o) => o.date === cur.date)) logs.unshift(cur);
+  for (const o of logs) for (const it of o.items) {
+    const key = it.key || `${o.date}|${it.side}|${it.ticker}`;
+    if (seen.has(key)) continue; seen.add(key);
+    const t = byKey[key];
+    const diff = t && t.status === "done" && it.price ? (t.price - it.price) / it.price : null;
+    rows.push({ date: o.date, item: it, key, rec: t, status: t ? t.status : "open", diff });
+  }
+  const done = rows.filter((r) => r.status === "done"), skipped = rows.filter((r) => r.status === "skipped");
+  const diffs = done.filter((r) => r.diff != null).map((r) => r.item.side === "BUY" ? r.diff : -r.diff);  // + = worse than suggested
+  return { real, rows, done: done.length, skipped: skipped.length, open: rows.length - done.length - skipped.length,
+           slip: diffs.length ? diffs.reduce((a, b) => a + b, 0) / diffs.length : null };
+}
+
+/* ---------- charts (hand-drawn SVG, no external code) ---------- */
+const chartNarrow = () => window.innerWidth < 600 || window.innerWidth >= 820;
+function lineChart(series, label) {
+  const pts = series.flatMap((s) => s.points.map((p) => p.v)).filter((v) => !bad(v));
+  const dates = [...new Set(series.flatMap((s) => s.points.map((p) => p.d)))].sort();
+  if (dates.length < 2 || !pts.length) return `<p class="chart-note">The chart appears after the second trading day.</p>`;
+  const narrow = chartNarrow();   // two charts side by side on laptops, full width on tablets, narrow on phones
+  const W = narrow ? 360 : 600, H = narrow ? 190 : 220, P = { l: 52, r: 8, t: 12, b: 26 };
+  let lo = Math.min(...pts), hi = Math.max(...pts); const pad = (hi - lo) * 0.1 || hi * 0.01 || 1; lo -= pad; hi += pad;
+  const xi = Object.fromEntries(dates.map((d, i) => [d, i]));
+  const x = (d) => P.l + (xi[d] / (dates.length - 1)) * (W - P.l - P.r);
+  const y = (v) => P.t + (1 - (v - lo) / (hi - lo)) * (H - P.t - P.b);
+  const grid = [0, 0.5, 1].map((f) => { const v = lo + (hi - lo) * f; return `<line x1="${P.l}" x2="${W - P.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${P.l - 8}" y="${y(v) + 4}" text-anchor="end" font-size="13" fill="var(--muted)">${kfmt(v)}</text>`; }).join("");
+  const lines = series.map((s) => {
+    const p = s.points.filter((q) => !bad(q.v)).map((q) => `${x(q.d).toFixed(1)},${y(q.v).toFixed(1)}`).join(" ");
+    return p ? `<polyline fill="none" stroke="${s.color}" stroke-width="${s.w || 2}" ${s.dash ? `stroke-dasharray="${s.dash}"` : ""} stroke-linejoin="round" stroke-linecap="round" points="${p}"/>` : "";
+  }).join("");
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">${grid}
+    <text x="${P.l}" y="${H - 6}" font-size="13" fill="var(--muted)">${esc(dayName(dates[0]))}</text>
+    <text x="${W - P.r}" y="${H - 6}" text-anchor="end" font-size="13" fill="var(--muted)">${esc(dayName(dates[dates.length - 1]))}</text>${lines}</svg>`;
+}
+const legend = (items) => `<div class="legend">${items.map(([n, c, dash]) => `<span><span class="swatch" style="background:${c};${dash ? "opacity:.75" : ""}"></span>${esc(n)}</span>`).join("")}</div>`;
+function donut(items, label) {
+  const total = items.reduce((a, i) => a + Math.max(0, i.value), 0);
+  if (!total) return `<p class="chart-note">Nothing held yet.</p>`;
+  const R = 52, C = 2 * Math.PI * R; let off = 0;
+  const segs = items.filter((i) => i.value > 0).map((i, n) => {
+    const len = (i.value / total) * C;
+    const s = `<circle r="${R}" cx="66" cy="66" fill="none" stroke="${i.color}" stroke-width="22" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 66 66)"/>`;
+    off += len; return s;
+  }).join("");
+  const list = items.filter((i) => i.value > 0).map((i) => `<li><i style="background:${i.color}"></i>${esc(i.label)}<b>${(i.value / total * 100).toFixed(0)}%</b></li>`).join("");
+  return `<div class="donut-wrap"><svg viewBox="0 0 132 132" role="img" aria-label="${esc(label)}">${segs}</svg><ul class="dl">${list}</ul></div>`;
+}
+const PALETTE = ["var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)", "var(--c5)", "var(--c6)"];
+
+/* ---------- render ---------- */
+const REGIME = {
+  bull: ["Uptrend", "The ASX 200 is above its 200-day average and rising. Strategy B can hold up to 5 ETFs."],
+  sideways: ["Sideways", "The ASX 200 trend is mixed. Strategy B can hold up to 5 ETFs."],
+  bear: ["Downtrend", "The ASX 200 is below its 200-day average and falling. Strategy B holds at most 2 ETFs and keeps the rest in AAA."],
+  unknown: ["Warming up", "Not enough history yet to judge the market trend."],
+};
+function nextWeekly(s) {
+  const now = sydParts(); const doneToday = s.B && s.B.last === now.date;
+  for (let i = 0; i < 8; i++) {
+    const d = addDays(now.date, i);
+    if (new Date(d + "T12:00:00Z").getUTCDay() !== 5) continue;
+    if (i === 0 && (doneToday || now.h >= 16)) continue;
+    return i === 0 ? "Today, from 3pm" : dayName(d) + ", from 3pm";
+  }
+  return "–";
+}
+function statusBanner(s) {
+  const st = s.status || {}; const now = sydParts();
+  const mins = st.checked ? (Date.now() - new Date(st.checked).getTime()) / 60000 : Infinity;
+  const open = !["Sat", "Sun"].includes(now.wd) && (now.h * 60 + now.m) >= 630 && (now.h * 60 + now.m) <= 990;
+  if (st.ok === false) banner("err", "The last check failed", st.message || "Unknown error. Open GitHub Actions to see the log.");
+  else if (open && mins > 50) banner("warn", "Updates are running late", `Last check was ${when(st.checked)}. GitHub sometimes delays scheduled runs; if this lasts more than a few hours, open the Actions tab on GitHub.`);
+  else banner(null);
+}
+
+function render() {
+  const s = STATE; if (!s || !s.B) return;
+  statusBanner(s);
+  const bk = book(TRADES, s.prices || {});
+  const ad = adherence(s);
+  renderOverview(s, bk, ad);
+  renderOrders(s, bk, ad);
+  renderHoldings(s, bk);
+  renderRankings(s);
+}
+
+function renderOverview(s, bk, ad) {
+  const [word, line] = REGIME[s.regime] || REGIME.unknown;
+  const h = s.history || [], last = h[h.length - 1] || { B: START, A: START, M: START };
+  const mk = s.market || {}, mine = s.mine || {};
+  // your portfolio: engine value (includes distributions) unless you've recorded trades since the last check
+  const newest = TRADES.reduce((a, t) => (t.recorded || "") > a ? t.recorded : a, "");
+  const provisional = bk.count && (!mine.has_trades || (s.status && newest > s.status.checked));
+  const yourValue = bk.count ? (provisional ? bk.value : mine.value) : null;
+  const mh = (mine.history || []).filter((p) => !bad(p.R));
+  const lastCmp = mh[mh.length - 1];
+  let peak = -Infinity, worst = 0; h.forEach((p) => { peak = Math.max(peak, p.B); worst = Math.min(worst, p.B / peak - 1); });
+  const shortLots = bk.holdings.flatMap((x) => x.lots).filter((l) => l.days < 365);
+  const nextLong = shortLots.map((l) => l.longFrom).sort()[0];
+
+  const tile = (k, v, sub, extra = "", text = false) => `<div class="tile ${extra}"><div class="k">${k}</div><div class="v${text ? " text" : ""}">${v}</div><div class="s">${sub}</div></div>`;
+  const tiles = [
+    tile(`<span class="swatch" style="background:currentColor"></span>Recommended (Strategy B)`, money(toAmt(last.B)), `${pct(last.B / START - 1)} since ${esc(dayName(s.started))}`, "lead"),
+    bk.count ? tile(`<span class="swatch" style="background:var(--Y)"></span>Your portfolio`, money(yourValue), provisional ? "Provisional until the next check" : `${pct(yourValue / CAPITAL - 1)} on ${money(CAPITAL)}`)
+             : tile(`<span class="swatch" style="background:var(--Y)"></span>Your portfolio`, "Not recorded", "Mark orders as done in Orders"),
+    tile("You vs recommended", lastCmp ? signed$(lastCmp.Y - lastCmp.R) : "–", lastCmp ? `${pct(lastCmp.Y / lastCmp.R - 1)} since ${esc(dayName(mine.compare_from))}` : "Shown once you record trades"),
+    tile("Orders followed", ad.done + ad.skipped ? `${ad.done} of ${ad.done + ad.skipped}` : "–", `${ad.open} waiting${ad.slip != null ? `, prices ${pct(ad.slip, 2)} vs suggested` : ""}`),
+    tile(`<span class="swatch" style="background:var(--M)"></span>Buy and hold`, money(toAmt(last.M)), `${pct(last.M / START - 1)} (40% STW, 40% IVV, 20% VEU)`),
+    tile("Worst fall so far", pct(worst), "Strategy B, peak to low"),
+    tile("Next weekly check", esc(nextWeekly(s)), `Rules version ${s.rules_version || 1}`, "", true),
+    tile("Held under 12 months", bk.count ? String(shortLots.length) + (shortLots.length === 1 ? " parcel" : " parcels") : "–",
+         nextLong ? `Next turns long-term ${esc(dateLong(nextLong))}` : "Gains here are taxed in full"),
+  ].join("");
+
+  const cmpChart = mh.length >= 2
+    ? legend([["Recommended", "var(--navy)"], ["What you did", "var(--Y)"]]) + lineChart([
+        { points: mh.map((p) => ({ d: p.d, v: p.R })), color: "var(--navy)", w: 2.6 },
+        { points: mh.map((p) => ({ d: p.d, v: p.Y })), color: "var(--Y)", w: 2.6 }], "Recommended versus your actual portfolio")
+      + `<p class="chart-note">Recommended shows what your money would be worth had it followed Strategy B exactly from ${esc(dateLong(mine.compare_from))}, starting from your actual value that day.</p>`
+    : `<p class="chart-note">${bk.count ? "This fills in after your trades have been through two checks." : "Record what you actually bought and sold in the Orders tab. This chart then compares your real results with the recommendations."}</p>`;
+
+  const stratChart = legend([["Strategy B", "var(--navy)"], ["Strategy A (paper)", "var(--A)"], ["Buy and hold", "var(--M)", 1]]) + lineChart([
+    { points: h.map((p) => ({ d: p.d, v: toAmt(p.M) })), color: "var(--M)", dash: "6 5", w: 1.8 },
+    { points: h.map((p) => ({ d: p.d, v: toAmt(p.A) })), color: "var(--A)", w: 1.8 },
+    { points: h.map((p) => ({ d: p.d, v: toAmt(p.B) })), color: "var(--navy)", w: 2.6 }], "Value of each paper portfolio over time");
+
+  const vB = s.B.view || { holdings: [], cash: START };
+  const recItems = vB.holdings.map((x, i) => ({ label: x.ticker, value: x.value, color: PALETTE[i % PALETTE.length] })).concat([{ label: "AAA (cash)", value: vB.cash, color: "var(--c7)" }]);
+  const yourItems = bk.holdings.map((x, i) => ({ label: x.ticker, value: x.value || 0, color: PALETTE[i % PALETTE.length] })).concat([{ label: "Cash", value: Math.max(0, bk.cash), color: "var(--c7)" }]);
+  const alerts = (s.alerts || []).slice(0, 8).map((a) => `<li><time>${esc(when(a.time))}</time><b>${esc(a.title)}</b>${esc(a.body)}</li>`).join("");
+
+  $("#overview").innerHTML = `
+    <section class="hero">
+      <div><div class="label">Market today</div><div class="regime ${esc(s.regime)}">${esc(word)}</div><p>${esc(line)}</p></div>
+      <div class="facts">
+        <span>Prices: <strong>${mk.market_open ? "delayed ~20 min, " + esc(when(mk.quote_time)) : "last close " + esc(dayName(mk.last_daily_close))}</strong></span>
+        <span>Checked: <strong>${esc(when((s.status || {}).checked))}</strong></span>
+        <span>Trend since: <strong>${esc(dayName(s.regime_since))}</strong></span>
+      </div>
+    </section>
+    <div class="tiles">${tiles}</div>
+    <div class="grid2">
+      <section class="panel"><h3>Recommended vs what you did</h3>${cmpChart}</section>
+      <section class="panel"><h3>Strategies since ${esc(dayName(s.started))}</h3>${stratChart}<p class="chart-note">Shown for ${money(CAPITAL)}, after a 0.15% cost on every trade.</p></section>
+    </div>
+    <div class="grid2" style="margin-top:12px">
+      <section class="panel"><h3>Where the recommended money is</h3>${donut(recItems, "Recommended allocation")}</section>
+      <section class="panel"><h3>Where your money is</h3>${bk.count ? donut(yourItems, "Your allocation") : `<p class="chart-note">Appears once you record trades.</p>`}</section>
+    </div>
+    <section style="margin-top:26px"><h2>Recent alerts</h2>
+      <div class="panel">${alerts ? `<ul class="alerts">${alerts}</ul>` : `<p class="note" style="margin:0">No alerts yet.</p>`}</div></section>`;
+}
+
+/* ---------- orders ---------- */
+let OPEN_FORM = null;   // key of the order whose "record" form is open
+function orderRow(it, date, ad, opts = {}) {
+  const key = it.key || `${date}|${it.side}|${it.ticker}`;
+  const r = opts.readonly ? null : ad.rows.find((x) => x.key === key);
+  const rec = r && r.rec;
+  const isRealItem = key.startsWith("R|");
+  const units = isRealItem ? it.units : toAmt(it.units), value = isRealItem ? it.value : toAmt(it.value);
+  const det = it.trim ? `Sell part: about ${num(units)} units at ${money(it.price, 2)} (trim to 30%)`
+    : it.whole ? `Sell all units (about ${num(units)} at ${money(it.price, 2)})`
+    : it.cash ? (it.side === "BUY" ? "Cash ETF: holds the uninvested money" : "Cash ETF: funds the purchases")
+    : `About ${num(units)} units at ${money(it.price, 2)}`;
+  const status = !rec ? `<span class="chip open">Not recorded</span>`
+    : rec.status === "skipped" ? `<span class="chip skip">Skipped</span>`
+    : `<span class="chip done">Done: ${num(rec.units)} at ${money(rec.price, 2)}${r.diff != null ? ` (${pct(r.diff, 2)} vs suggested)` : ""}</span>`;
+  const actions = opts.readonly ? "" : rec ? `<button class="mini" data-act="edit" data-key="${esc(key)}">Change</button><button class="mini" data-act="undo" data-key="${esc(key)}">Undo</button>`
+    : `<button class="mini primary" data-act="edit" data-key="${esc(key)}">I did this</button><button class="mini" data-act="skip" data-key="${esc(key)}">Skipped</button>`;
+  const form = OPEN_FORM === key ? `<div class="recform">
+      <div><label for="f-date">Date</label><input id="f-date" type="date" value="${esc(rec && rec.date || sydParts().date)}" max="${sydParts().date}"></div>
+      <div><label for="f-units">Units</label><input id="f-units" type="number" step="any" min="0" value="${esc(rec && rec.units || (bad(units) ? "" : units.toFixed(2)))}"></div>
+      <div><label for="f-price">Price per unit</label><input id="f-price" type="number" step="any" min="0" value="${esc(rec && rec.price || it.price || "")}"></div>
+      <div class="row"><button class="mini primary" data-act="save" data-key="${esc(key)}">Save trade</button><button class="mini" data-act="cancel">Cancel</button><span class="note" id="f-msg"></span></div>
+    </div>` : "";
+  return `<li class="order"><span class="side ${it.side}">${it.side === "BUY" ? "Buy" : "Sell"}</span>
+    <span class="tic">${esc(it.ticker)}</span><span class="amt">${money(value)}</span><span class="det">${esc(det)}</span>
+    ${opts.readonly ? "" : `<div class="act">${status}${actions}</div>`}${form}</li>`;
+}
+
+function renderOrders(s, bk, ad) {
+  const o = s.B.orders; const keep = (o && o.keep) || [];
+  const paperItems = (o && o.items) || [];
+  const ro = s.B.real_orders;
+  const real = isReal();
+  const curItems = real ? ((ro && ro.items) || []) : paperItems;
+  const curDate = real ? (ro && ro.date) : (o && o.date);
+
+  const paperTicket = (readonly) => `
+    <section class="ticket" aria-labelledby="ordersTitle">
+      <div class="ticket-head"><h2 id="ordersTitle">${readonly ? "Paper portfolio orders" : "Strategy B orders"}</h2><div class="when">${o ? "Weekly check<br>" + esc(when(o.time)) : "No check yet"}</div></div>
+      <div class="perf" aria-hidden="true"></div>
+      ${paperItems.length ? `<ul class="orders">${paperItems.map((it) => orderRow(it, o.date, ad, { readonly })).join("")}</ul>`
+        : `<div class="none">No changes this time. Keep holding ${keep.length ? keep.map(esc).join(", ") : "everything in AAA"}.</div>`}
+      <div class="ticket-foot">${readonly
+        ? `The $10,000 paper portfolio the strategy is measured against, shown for ${money(CAPITAL)}. Nothing to do here; your own orders are above.`
+        : `Amounts are for ${money(CAPITAL)}. After you trade in Betashares, tap “I did this” and enter your actual units and price, so the tool can compare your results with the recommendations.`} Next weekly check: <strong>${esc(nextWeekly(s))}</strong>.</div>
+    </section>`;
+
+  let ticket;
+  if (!real) ticket = paperTicket(false);
+  else {
+    const reason = ro ? { weekly: "Weekly check", start: "First real orders", recalc: "Recalculated" }[ro.reason] || "Orders" : "";
+    const skipped = ro && ro.skipped && ro.skipped.length ? `<div class="ticket-foot">Not bought now: ${ro.skipped.map((x) => `${esc(x.ticker)} (${esc(x.why)})`).join("; ")}.</div>` : "";
+    ticket = `
+    <section class="ticket" aria-labelledby="realTitle">
+      <div class="ticket-head"><h2 id="realTitle">Your orders</h2><div class="when">${ro ? esc(reason) + "<br>" + esc(when(ro.time)) : "Coming at the next check"}</div></div>
+      <div class="perf" aria-hidden="true"></div>
+      ${!ro ? `<div class="none">Your first real orders appear at the next check: within 20 minutes during ASX hours. To get them now, open GitHub, Actions, Signal engine, Run workflow, check now.</div>`
+        : ro.items.length ? `<ul class="orders">${ro.items.map((it) => orderRow(it, ro.date, ad)).join("")}</ul>`
+        : `<div class="none">Nothing to do: your recorded holdings already match Strategy B (${(ro.targets || []).map(esc).join(", ") || "all in AAA"}).</div>`}
+      ${skipped}
+      <div class="ticket-foot">Sized from your recorded holdings and cash (${ro ? money(ro.total) : money(CAPITAL)} in total). Place these in Betashares Direct, ideally before 4pm, then tap “I did this” with your actual units and price. If you've recorded trades or changed your amount since, recalculate so the orders match.
+        <div class="row" style="margin-top:10px"><button class="mini primary" data-act="recalc">Recalculate my orders</button><span class="note" id="recalcMsg"></span></div></div>
+    </section>
+    <div style="margin-top:22px">${paperTicket(true)}</div>`;
+  }
+  const past = ad.rows.filter((r) => r.date !== curDate).slice(0, 40).map((r) => `<tr><td>${esc(dayName(r.date))}</td>
+      <td><span class="side ${r.item.side}">${r.item.side === "BUY" ? "Buy" : "Sell"}</span></td><td class="t">${esc(r.item.ticker)}</td>
+      <td class="r">${money(r.key.startsWith("R|") ? r.item.value : toAmt(r.item.value))}</td>
+      <td>${r.status === "done" ? `<span class="chip done">Done ${money(r.rec.price, 2)}</span>` : r.status === "skipped" ? `<span class="chip skip">Skipped</span>` : `<span class="chip open">Not recorded</span>`}</td>
+      <td class="r ${r.diff != null ? cls(r.item.side === "BUY" ? -r.diff : r.diff) : ""}">${r.diff != null ? pct(r.diff, 2) : ""}</td>
+      <td>${r.rec ? "" : `<button class="mini" data-act="edit" data-key="${esc(r.key)}">I did this</button>`}</td></tr>`).join("");
+  const pastForm = OPEN_FORM && !curItems.some((it) => (it.key || `${curDate}|${it.side}|${it.ticker}`) === OPEN_FORM) ? (() => {
+    const r = ad.rows.find((x) => x.key === OPEN_FORM); return r ? `<ul class="orders" style="padding:0">${orderRow(r.item, r.date, ad)}</ul>` : ""; })() : "";
+
+  const tickers = (s.universe || (s.rankings || []).map((r) => ({ ticker: r.ticker, theme: r.theme }))).map((u) => `<option value="${esc(u.ticker)}">${esc(u.ticker)} (${esc(u.theme)})</option>`).join("");
+  const mine = TRADES.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((t) => `<tr>
+      <td>${esc(dayName(t.date))}</td><td>${t.status === "skipped" ? `<span class="chip skip">Skipped</span>` : `<span class="side ${t.side}">${t.side === "BUY" ? "Buy" : "Sell"}</span>`}</td>
+      <td class="t">${esc(t.ticker)}</td><td class="r">${t.status === "done" ? num(t.units) : ""}</td><td class="r">${t.status === "done" ? money(t.price, 2) : ""}</td>
+      <td class="r">${t.status === "done" ? money(t.units * t.price) : ""}</td><td class="hide-sm">${STATE.universe && !STATE.universe.some((u) => u.ticker === t.ticker) ? `<span class="tag below">Unknown ETF, not counted</span>` : t.order_key ? "From an order" : "Your own"}</td>
+      <td><button class="mini" data-act="del" data-id="${esc(t.id)}">Delete</button></td></tr>`).join("");
+
+  $("#orders").innerHTML = `${ticket}
+    <section style="margin-top:26px"><h2>Earlier orders</h2><p class="sub">Every earlier ${real ? "real-money" : "Strategy B"} order and whether you followed it. Price difference: positive means you paid more (or sold for less) than suggested.</p>
+      ${pastForm}
+      <div class="panel scroll"><table><thead><tr><th>Date</th><th>Side</th><th>ETF</th><th class="r">Suggested</th><th>You</th><th class="r">Price diff</th><th></th></tr></thead>
+      <tbody>${past || `<tr><td colspan="7">No earlier orders yet.</td></tr>`}</tbody></table></div></section>
+    <section><h2>Record another trade</h2><p class="sub">For trades that weren't in an order, for example buying earlier or later than suggested.</p>
+      <div class="panel"><div class="fields">
+        <div><label for="m-side">Side</label><select id="m-side"><option value="BUY">Buy</option><option value="SELL">Sell</option></select></div>
+        <div><label for="m-tic">ETF</label><select id="m-tic">${tickers}</select></div>
+        <div><label for="m-date">Date</label><input id="m-date" type="date" value="${sydParts().date}" max="${sydParts().date}"></div>
+        <div><label for="m-units">Units</label><input id="m-units" type="number" step="any" min="0"></div>
+        <div><label for="m-price">Price per unit</label><input id="m-price" type="number" step="any" min="0"></div>
+      </div><div class="row" style="margin-top:12px"><button class="btn" data-act="manual">Save trade</button></div><div class="msg" id="m-msg" role="status"></div></div></section>
+    <section><h2>Your trade record</h2><p class="sub">${bk.count} trade${bk.count === 1 ? "" : "s"} recorded. Cash starts at your investment amount of ${money(CAPITAL)}, minus purchases, plus sales.</p>
+      <div class="panel scroll"><table><thead><tr><th>Date</th><th>Side</th><th>ETF</th><th class="r">Units</th><th class="r">Price</th><th class="r">Value</th><th class="hide-sm">Source</th><th></th></tr></thead>
+      <tbody>${mine || `<tr><td colspan="8">Nothing recorded yet.</td></tr>`}</tbody></table></div></section>`;
+}
+
+function findOrderItem(key) {
+  for (const o of [STATE.B.real_orders, ...(STATE.B.real_order_log || [])].filter(Boolean))
+    for (const it of o.items || []) if (it.key === key) return { it, date: o.date };
+  for (const o of (STATE.B.order_log || [])) for (const it of o.items) if ((it.key || `${o.date}|${it.side}|${it.ticker}`) === key) return { it, date: o.date };
+  const o = STATE.B.orders; if (o) for (const it of o.items || []) if ((it.key || `${o.date}|${it.side}|${it.ticker}`) === key) return { it, date: o.date };
+  return null;
+}
+
+$("#orders").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-act]"); if (!b) return;
+  const act = b.dataset.act, key = b.dataset.key;
+  try {
+    if (act === "edit") { OPEN_FORM = key; render(); const f = $("#f-units"); if (f) f.focus(); return; }
+    if (act === "recalc") {
+      b.disabled = true; await saveSettings({ recalc: new Date().toISOString() });
+      const m = $("#recalcMsg"); if (m) m.textContent = "Requested. New orders arrive at the next check (within 20 minutes in ASX hours), or run check now in GitHub Actions.";
+      b.disabled = false; return;
+    }
+    if (act === "cancel") { OPEN_FORM = null; render(); return; }
+    if (act === "undo") { await mutateTrades((l) => l.filter((t) => t.order_key !== key)); return; }
+    if (act === "del") { await mutateTrades((l) => l.filter((t) => t.id !== b.dataset.id)); return; }
+    if (act === "skip") {
+      const f = findOrderItem(key); if (!f) return;
+      await mutateTrades((l) => l.filter((t) => t.order_key !== key).concat([{ id: newId(), order_key: key, status: "skipped", date: f.date, side: f.it.side, ticker: f.it.ticker, recorded: new Date().toISOString() }]));
+      return;
+    }
+    if (act === "save") {
+      const f = findOrderItem(key); if (!f) return;
+      const date = $("#f-date").value, units = Number($("#f-units").value), price = Number($("#f-price").value);
+      if (!date || !(units > 0) || !(price > 0) || date > sydParts().date) { $("#f-msg").textContent = "Enter a date (not in the future), units and price above zero."; return; }
+      b.disabled = true;
+      await mutateTrades((l) => l.filter((t) => t.order_key !== key).concat([{ id: newId(), order_key: key, status: "done", date, side: f.it.side, ticker: f.it.ticker, units, price, recorded: new Date().toISOString() }]));
+      OPEN_FORM = null; render();
+      return;
+    }
+    if (act === "manual") {
+      const side = $("#m-side").value, ticker = $("#m-tic").value, date = $("#m-date").value, units = Number($("#m-units").value), price = Number($("#m-price").value);
+      const m = $("#m-msg");
+      if (!ticker || !date || !(units > 0) || !(price > 0) || date > sydParts().date) { m.className = "msg bad"; m.textContent = "Enter the ETF, a date (not in the future), units and price above zero."; return; }
+      if (side === "SELL") {
+        const held = (book(TRADES, {}).holdings.find((h) => h.ticker === ticker) || { units: 0 }).units;
+        if (units > held + 1e-6) { m.className = "msg bad"; m.textContent = `You've recorded ${num(held)} units of ${ticker}, so you can't sell ${num(units)}.`; return; }
+      }
+      b.disabled = true;
+      await mutateTrades((l) => l.concat([{ id: newId(), order_key: null, status: "done", date, side, ticker, units, price, recorded: new Date().toISOString() }]));
+      return;
+    }
+  } catch (err) {
+    banner("err", "Couldn't save your trade", err.message);
+  }
+});
+
+/* ---------- holdings ---------- */
+function taxTag(days, longFrom) {
+  return days >= 365 ? `<span class="tag long">Long-term</span>` : `<span class="tag short">Short-term until ${esc(dateLong(longFrom))}</span>`;
+}
+function renderHoldings(s, bk) {
+  const today = sydParts().date;
+  const your = bk.holdings.map((x) => {
+    const lots = x.lots; const shortL = lots.filter((l) => l.days < 365);
+    const tag = shortL.length ? taxTag(shortL[0].days, shortL.map((l) => l.longFrom).sort()[0]) : `<span class="tag long">Long-term</span>`;
+    return `<tr><td><div class="t">${esc(x.ticker)}</div><div class="th">${lots.length} parcel${lots.length === 1 ? "" : "s"}</div><div style="margin-top:4px">${tag}</div></td>
+      <td class="r hide-sm">${num(x.units)}</td><td class="r">${money(x.value)}<div class="th">${num(x.units)} at ${money(x.price, 2)}</div></td>
+      <td class="r ${cls(x.gain)}">${signed$(x.gain)}<div class="th">${pct(x.cost ? x.gain / x.cost : null)}</div></td></tr>`;
+  }).join("");
+  const real = bk.realised.slice().reverse().slice(0, 20).map((r) => `<tr><td>${esc(dayName(r.date))}</td><td class="t">${esc(r.ticker)}</td><td class="r ${cls(r.gain)}">${signed$(r.gain)}</td><td class="r">${r.days} days</td><td>${r.days >= 365 ? `<span class="tag long">Discount applies</span>` : `<span class="tag short">Taxed in full</span>`}</td></tr>`).join("");
+
+  const paper = (title, sub, S, showRank) => {
+    const v = S.view || { equity: START, cash: START, holdings: [] };
+    const rows = v.holdings.map((x) => {
+      const days = x.since ? daysBetween(x.since, today) : null;
+      return `<tr><td><div class="t">${esc(x.ticker)}</div><div class="th">${esc(x.theme)}${showRank && x.rank ? ", rank " + x.rank : ""}</div></td>
+        <td class="r">${money(toAmt(x.value))}<div class="bar" aria-hidden="true"><i style="width:${Math.min(100, x.weight * 100).toFixed(1)}%"></i></div></td>
+        <td class="r">${(x.weight * 100).toFixed(1)}%</td>
+        <td class="r ${cls(x.gain)}">${signed$(toAmt(x.gain))}<div class="th">${pct(x.cost ? x.gain / x.cost : null)}</div></td>
+        <td class="hide-sm">${days == null ? "" : `${days} days<div class="th">${days >= 365 ? "Long-term" : "Short-term until " + esc(dateLong(addDays(x.since, 366)))}</div>`}</td></tr>`;
+    }).join("");
+    return `<section><h2>${esc(title)}</h2><p class="sub">${esc(sub)}</p><div class="panel scroll"><table>
+      <thead><tr><th>ETF</th><th class="r">Value</th><th class="r">Share</th><th class="r">Gain</th><th class="hide-sm">Held</th></tr></thead>
+      <tbody>${rows}<tr><td><div class="t">AAA</div><div class="th">Cash ETF</div></td><td class="r">${money(toAmt(v.cash))}</td><td class="r">${(v.cash / v.equity * 100).toFixed(1)}%</td><td></td><td class="hide-sm"></td></tr></tbody></table>
+      <p class="note" style="margin:10px 0 0">Total ${money(toAmt(v.equity))}</p></div></section>`;
+  };
+  const all = [...(s.B.trades || []).map((t) => ({ ...t, st: "B" })), ...(s.A.trades || []).map((t) => ({ ...t, st: "A" }))]
+    .sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 30)
+    .map((t) => `<tr><td>${esc(dayName(t.date))}</td><td>${t.st}</td><td><span class="side ${t.side}">${t.side === "BUY" ? "Buy" : "Sell"}</span></td><td class="t">${esc(t.ticker)}</td><td class="r">${money(toAmt(t.value))}</td></tr>`).join("");
+
+  $("#holdings").innerHTML = `
+    <section><h2>Your holdings</h2><p class="sub">From your trade record, valued at the latest prices. Short-term parcels have been held under 12 months: a gain on selling them is taxed in full, without the 50% capital gains discount.</p>
+      <div class="panel scroll"><table><thead><tr><th>ETF and tax status</th><th class="r hide-sm">Units</th><th class="r">Value</th><th class="r">Gain</th></tr></thead>
+      <tbody>${your || `<tr><td colspan="4">Nothing recorded yet. Use “I did this” on an order.</td></tr>`}${bk.count ? `<tr><td><div class="t">Cash</div></td><td class="hide-sm"></td><td class="r">${money(bk.cash)}</td><td></td></tr>` : ""}</tbody></table></div></section>
+    ${real ? `<section><h2>Your realised gains</h2><div class="panel scroll"><table><thead><tr><th>Sold</th><th>ETF</th><th class="r">Gain</th><th class="r">Held</th><th>Tax</th></tr></thead><tbody>${real}</tbody></table></div></section>` : ""}
+    ${paper("Recommended: Strategy B", "Trend-following, checked weekly. Shown for your amount.", s.B, true)}
+    ${paper("Strategy A (paper only, no alerts)", "Daily dip-buying, kept only as a comparison.", s.A, false)}
+    <section><h2>Paper trade log</h2><div class="panel scroll"><table><thead><tr><th>Date</th><th>Strategy</th><th>Side</th><th>ETF</th><th class="r">Value</th></tr></thead>
+      <tbody>${all || `<tr><td colspan="5">No trades yet.</td></tr>`}</tbody></table></div></section>`;
+}
+
+/* ---------- rankings ---------- */
+function renderRankings(s) {
+  const B = s.B; const heldThemes = {};
+  ((B.view && B.view.holdings) || []).forEach((x) => { heldThemes[x.theme] = (heldThemes[x.theme] || 0) + 1; });
+  const rk = (s.rankings || []).map((r) => {
+    const status = r.heldB ? `<span class="tag held">Held</span>` : !r.in_trend ? `<span class="tag below">Below buy line</span>`
+      : (heldThemes[r.theme] || 0) >= 2 ? `<span class="tag trend">Theme full</span>` : `<span class="tag trend">In trend</span>`;
+    return `<tr class="${r.heldB ? "held" : ""}"><td>${r.rank}</td><td><div class="t">${esc(r.ticker)}</div><div class="th">${esc(r.theme)}</div></td>
+      <td class="r ${cls(r.score)}">${pct(r.score)}</td><td class="r hide-sm">${pct(r.vs_trend)}</td><td class="r">${status}</td></tr>`;
+  }).join("");
+  $("#rankings").innerHTML = `<section><h2>Momentum rankings</h2>
+    <p class="sub">ETFs that beat cash and sit above their trend line, strongest first. Momentum is their average return over 3, 6 and 12 months. Strategy B buys from the top: at most ${s.n_max ?? 5} ETFs, no more than 2 per theme, and only above 101% of the trend line.</p>
+    <div class="panel scroll"><table><thead><tr><th>#</th><th>ETF</th><th class="r">Momentum</th><th class="r hide-sm">Vs trend line</th><th class="r">Status</th></tr></thead>
+    <tbody>${rk || `<tr><td colspan="5">No ETFs currently qualify.</td></tr>`}</tbody></table></div></section>`;
+}
+
+/* ---------- tabs ---------- */
+function showTab(name) {
+  document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  document.querySelectorAll("[data-panel]").forEach((p) => p.hidden = p.dataset.panel !== name);
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+/* ---------- settings ---------- */
+$("#gist").value = store.get("gist");
+$("#token").value = store.get("token");
+$("#save").addEventListener("click", async () => {
+  const gist = $("#gist").value.trim().split("/").filter(Boolean).pop() || "";
+  const token = $("#token").value.trim();
+  const m = $("#saveMsg");
+  if (!gist || !token) { m.className = "msg bad"; m.textContent = "Enter both the Gist ID and the token."; return; }
+  store.set("gist", gist); store.set("token", token); $("#gist").value = gist;
+  m.className = "msg"; m.textContent = "Checking…";
+  try { await gh("/gists/" + encodeURIComponent(gist)); m.className = "msg ok"; m.textContent = "Saved. Your data is loading."; await load(); }
+  catch (e) { m.className = "msg bad"; m.textContent = e.message; }
+});
+$("#forget").addEventListener("click", () => {
+  store.del("gist"); store.del("token"); $("#gist").value = ""; $("#token").value = "";
+  $("#saveMsg").className = "msg"; $("#saveMsg").textContent = "Removed from this device.";
+  STATE = null; renderEmpty();
+});
+
+/* Merge a change into settings.json, keeping everything else (amount, mode). */
+async function saveSettings(patch) {
+  const g = await gh(gistPath());
+  const cur = (await readJson(g.files, "settings.json")) || {};
+  CFG = { ...cur, ...patch, updated: new Date().toISOString() };
+  await gh(gistPath(), { method: "PATCH", body: JSON.stringify({ files: { "settings.json": { content: JSON.stringify(CFG) } } }) });
+  syncModeUI();
+  return CFG;
+}
+function syncModeUI() {
+  document.querySelectorAll('input[name="mode"]').forEach((r) => { r.checked = r.value === (isReal() ? "real" : "paper"); });
+  const c = $("#modeChip"); if (!c) return;
+  c.hidden = false; c.textContent = isReal() ? "Real money" : "Paper";
+  c.className = "chip " + (isReal() ? "done" : "open");
+}
+$("#saveMode").addEventListener("click", async () => {
+  const m = $("#modeMsg"); const sel = document.querySelector('input[name="mode"]:checked');
+  if (!sel) { m.className = "msg bad"; m.textContent = "Choose a mode."; return; }
+  if (!store.get("gist") || !store.get("token")) { m.className = "msg bad"; m.textContent = "Connect your Gist above first."; return; }
+  if (sel.value === "real" && !confirm(`Switch to real money with ${money(CAPITAL)}? Check the investment amount below matches the cash you've set aside, then place the orders it gives you in Betashares.`)) return;
+  m.className = "msg"; m.textContent = "Saving…";
+  try {
+    await saveSettings({ mode: sel.value });
+    if (STATE && STATE.B) render();
+    m.className = "msg ok";
+    m.textContent = sel.value === "real" ? "Real-money mode is on. Your first orders arrive at the next check (within 20 minutes in ASX hours), or run check now in GitHub Actions." : "Back to paper only.";
+  } catch (e) { m.className = "msg bad"; m.textContent = e.message; }
+});
+
+$("#saveCapital").addEventListener("click", async () => {
+  const m = $("#capitalMsg");
+  const v = Number(String($("#capital").value).replace(/[$,\s]/g, ""));
+  if (!isFinite(v) || v < 500 || v > 5000000) { m.className = "msg bad"; m.textContent = "Enter an amount between $500 and $5,000,000."; return; }
+  if (!store.get("gist") || !store.get("token")) { m.className = "msg bad"; m.textContent = "Connect your Gist above first."; return; }
+  m.className = "msg"; m.textContent = "Saving…";
+  try {
+    await saveSettings({ capital: Math.round(v) });
+    CAPITAL = Math.round(v); $("#capital").value = String(CAPITAL);
+    if (STATE && STATE.B) render(STATE);
+    m.className = "msg ok"; m.textContent = `Saved. Everything is now shown for ${money(CAPITAL)}, and alerts will use it from the next check.`;
+  } catch (e) { m.className = "msg bad"; m.textContent = e.message; }
+});
+
+/* ---------- push alerts ---------- */
+/* ---------- push alerts ---------- */
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const pushSupported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+function deviceName() {
+  const u = navigator.userAgent;
+  const dev = /iPhone/.test(u) ? "iPhone" : /iPad/.test(u) ? "iPad" : /Android/.test(u) ? "Android" : /Windows/.test(u) ? "Windows PC" : /Mac/.test(u) ? "Mac" : "Device";
+  const br = /Edg\//.test(u) ? "Edge" : /Chrome\//.test(u) ? "Chrome" : /Firefox\//.test(u) ? "Firefox" : /Safari\//.test(u) ? "Safari" : "";
+  return br ? `${dev} (${br})` : dev;
+}
+function b64ToBytes(s) {
+  const pad = "=".repeat((4 - (s.length % 4)) % 4);
+  const raw = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+function sameKey(buf, b64) {
+  if (!buf) return false;
+  const a = new Uint8Array(buf), b = b64ToBytes(b64);
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+let swReg = null;
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js", { scope: "./" }).then((r) => { swReg = r; updatePushState(); }).catch(() => {});
+}
+async function currentSub() {
+  if (!pushSupported) return null;
+  const reg = swReg || await navigator.serviceWorker.ready;
+  return reg.pushManager.getSubscription();
+}
+async function updatePushState() {
+  const el = $("#pushState");
+  if (!pushSupported) {
+    el.textContent = isIOS && !standalone ? "Add Signals to your Home Screen first, then open it from the icon to turn on alerts."
+      : "This browser can't receive alerts. Try Chrome, Edge or Safari.";
+    return;
+  }
+  try {
+    const sub = await currentSub();
+    el.textContent = Notification.permission === "denied" ? "Alerts are blocked for this app in your device settings."
+      : sub ? "Alerts are on for this device." : "Alerts are off for this device.";
+  } catch (e) { el.textContent = "Alerts are off for this device."; }
+}
+async function saveSubscription(entry, remove = false) {
+  const g = await gh("/gists/" + encodeURIComponent(store.get("gist")));
+  let list = (await readJson(g.files, "subscriptions.json")) || [];
+  list = list.filter((x) => x.endpoint !== entry.endpoint);
+  if (!remove) list.push(entry);
+  await gh("/gists/" + encodeURIComponent(store.get("gist")), { method: "PATCH",
+    body: JSON.stringify({ files: { "subscriptions.json": { content: JSON.stringify(list) } } }) });
+  return list.length;
+}
+$("#enablePush").addEventListener("click", async () => {
+  const m = $("#pushMsg"); m.className = "msg";
+  if (!pushSupported) {
+    m.className = "msg bad";
+    m.textContent = isIOS && !standalone ? "On iPhone: in Safari tap Share, then Add to Home Screen. Open Signals from the new icon and tap Turn on alerts again." : "This browser can't receive alerts.";
+    return;
+  }
+  if (!store.get("gist") || !store.get("token")) { m.className = "msg bad"; m.textContent = "Connect your Gist above first."; return; }
+  if (!STATE || !STATE.public_key) { m.className = "msg bad"; m.textContent = "The engine hasn't run yet. On GitHub, open Actions, choose Signal engine and Run workflow (check now), then tap Refresh."; return; }
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") { m.className = "msg bad"; m.textContent = "Notifications weren't allowed. You can change this in your device's settings for Signals."; return; }
+    m.textContent = "Turning on…";
+    const reg = swReg || await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (sub && !sameKey(sub.options && sub.options.applicationServerKey, STATE.public_key)) { await sub.unsubscribe(); sub = null; }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(STATE.public_key) });
+    const j = sub.toJSON();
+    const n = await saveSubscription({ endpoint: j.endpoint, keys: j.keys, device: deviceName(), added: new Date().toISOString() });
+    m.className = "msg ok"; m.textContent = `Alerts are on. ${n} device${n === 1 ? "" : "s"} will get them.`;
+  } catch (e) {
+    m.className = "msg bad"; m.textContent = "Couldn't turn on alerts: " + (e.message || e);
+  }
+  updatePushState();
+});
+$("#disablePush").addEventListener("click", async () => {
+  const m = $("#pushMsg"); m.className = "msg";
+  try {
+    const sub = await currentSub();
+    if (!sub) { m.textContent = "Alerts were already off on this device."; return; }
+    const endpoint = sub.endpoint;
+    await sub.unsubscribe();
+    if (store.get("gist") && store.get("token")) await saveSubscription({ endpoint }, true);
+    m.className = "msg ok"; m.textContent = "Alerts are off for this device.";
+  } catch (e) { m.className = "msg bad"; m.textContent = "Couldn't turn off alerts: " + (e.message || e); }
+  updatePushState();
+});
+
+/* ---------- refresh ---------- */
+$("#refresh").addEventListener("click", load);
+let NARROW = chartNarrow();
+window.addEventListener("resize", () => { const n = chartNarrow(); if (n !== NARROW) { NARROW = n; render(); } });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && !OPEN_FORM) load(); });
+setInterval(() => { if (document.visibilityState === "visible" && !OPEN_FORM) load(); }, 5 * 60 * 1000);
+load();
+</script>
+</body>
+</html>
