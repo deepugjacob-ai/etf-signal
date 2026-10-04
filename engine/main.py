@@ -10,6 +10,7 @@ from .data import load as load_data
 from .indicators import clean_prices, compute
 from .notify import ensure_keys, send_all
 from . import mine as MINE
+from . import real as REAL
 from .store import Store
 from .strategies import b_new_weights, decide_a_entries, decide_a_exits, decide_b
 
@@ -94,7 +95,7 @@ def add_alert(state, alerts, now, title, body, tag):
     state["alerts"] = ([a] + state.get("alerts", []))[:40]
 
 
-def run(state, now, key, alerts, scale=1.0, capital=C.START_CAPITAL, mytrades=None):
+def run(state, now, key, alerts, scale=1.0, capital=C.START_CAPITAL, mytrades=None, mode="paper", recalc=None):
     today = now.date()
     adj, turnover, raw_last, info, close = load_data(key, now)
     px = clean_prices(adj)
@@ -154,11 +155,36 @@ def run(state, now, key, alerts, scale=1.0, capital=C.START_CAPITAL, mytrades=No
             B["order_log"] = ([{"date": tstr, "items": items}] + B.get("order_log", []))[:100]
         B["trades"] = (B["trades"] + [{"date": tstr, **tr, "price": raw_last.get(tr["ticker"])} for tr in trades])[-200:]
         B["last"] = today.isoformat()
-        if trades:
-            add_alert(state, alerts, now, "Strategy B: new orders", describe(items, scale), "B")
-        else:
-            add_alert(state, alerts, now, "Strategy B: no changes",
-                      "Keep holding " + (", ".join(keep) if keep else f"everything in {C.CASH}") + ".", "B")
+        if mode != "real":
+            if trades:
+                add_alert(state, alerts, now, "Strategy B: new orders", describe(items, scale), "B")
+            else:
+                add_alert(state, alerts, now, "Strategy B: no changes",
+                          "Keep holding " + (", ".join(keep) if keep else f"everything in {C.CASH}") + ".", "B")
+
+    # Real-money orders: sized from what you actually hold. Made at every weekly check, on the first run after
+    # switching to real money, and when you tap "Recalculate my orders".
+    if mode == "real" and (due_B or not B.get("real_orders") or (recalc and recalc != B.get("real_recalc"))):
+        mine_now = MINE.compute(mytrades or [], px.ffill(), close.ffill(), capital, state["history"], today)
+        hold = mine_now.get("holdings", []) if mine_now.get("has_trades") else []
+        cash = mine_now.get("cash", capital) if mine_now.get("has_trades") else capital
+        targets = list(B["pf"]["units"])
+        ro = REAL.orders(ind, t, targets, tradable, hold, cash, raw_last)
+        first_real = not B.get("real_orders")
+        for o in ro["items"]:
+            o["key"] = f"R|{tstr}|{o['side']}|{o['ticker']}"
+        B["real_orders"] = {"date": tstr, "time": now.isoformat(), "items": ro["items"], "targets": targets,
+                            "total": ro["total"], "skipped": ro["skipped"],
+                            "reason": "weekly" if due_B else "start" if first_real else "recalc"}
+        B["real_recalc"] = recalc
+        if ro["items"]:
+            B["real_order_log"] = ([{"date": tstr, "items": ro["items"]}] +
+                                   [x for x in B.get("real_order_log", []) if x["date"] != tstr])[:100]
+            title = "Your first real orders" if first_real else "Your orders this week" if due_B else "Your updated orders"
+            add_alert(state, alerts, now, title, describe(ro["items"]) + (" Place them in Betashares, then tap I did this." if not due_B or open_today else ""), "R")
+        elif due_B:
+            add_alert(state, alerts, now, "No changes this week",
+                      "Your holdings already match Strategy B: keep holding " + (", ".join(targets) or "AAA") + ".", "R")
 
     # Strategy A (paper only): daily from 3pm
     A = state["A"]
@@ -227,6 +253,8 @@ def main(argv=None):
     subs = store.read("subscriptions.json", []) or []
     state = store.read("state.json", {}) or {}
     settings = store.read("settings.json", {}) or {}
+    mode = "real" if settings.get("mode") == "real" else "paper"
+    recalc = settings.get("recalc")
     mytrades = store.read("mytrades.json", []) or []
     try:
         capital = float(settings.get("capital") or C.START_CAPITAL)
@@ -253,8 +281,9 @@ def main(argv=None):
     try:
         if not key:
             raise RuntimeError("EODHD_API_KEY is not set")
-        run(state, now, key, alerts, scale, capital, mytrades)
+        run(state, now, key, alerts, scale, capital, mytrades, mode, recalc)
         state["capital"] = capital
+        state["mode"] = mode
         state["status"] = {**state.get("status", {}), "ok": True, "checked": now.isoformat(), "message": "Up to date"}
     except Exception as e:
         st = state.get("status", {})
