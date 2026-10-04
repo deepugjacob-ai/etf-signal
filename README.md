@@ -115,6 +115,15 @@ In **Orders**, tap **I did this** after you trade in Betashares and enter your a
 
 The engine values your trades the same way as the paper portfolio (dividends included), and the **Overview** compares them: your value against what the same money would be worth had it followed Strategy B exactly. **Holdings** shows each parcel's tax status: short-term until it has been held 12 months.
 
+## Real-money mode
+
+In **Settings** → **Trading mode**, choose **Real money**. Set **Investment amount** to the cash you've put aside for this strategy.
+
+- The engine then gives you **your own orders**: what to buy and sell so your recorded holdings match Strategy B, sized from your real cash and units. It does this at every Friday check, on the first check after you switch, and whenever you tap **Recalculate my orders**.
+- Your Friday alert becomes those orders. The $10,000 paper portfolio keeps running as the yardstick.
+- Record every trade with **I did this** (actual units and price), or the next orders will be wrong. If you add money, raise the investment amount and recalculate.
+- Leftover cash of $100 or more is parked in AAA, as the strategy does. Purchases you can't fully fund are scaled down together.
+
 ## Known limitations
 
 - Prices are delayed 15–20 minutes, and GitHub can run checks a few minutes late.
