@@ -168,7 +168,7 @@ input[type=text],input[type=password],input[type=number],input[type=date],select
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="brand"><img src="icon-192.png" alt="">ETF Signals</div>
+    <div class="brand"><img src="icon-192.png" alt="">ETF Signals <span class="chip open" id="modeChip" hidden></span></div>
     <button class="refresh" id="refresh" type="button">Refresh</button>
   </header>
 
@@ -210,6 +210,19 @@ input[type=text],input[type=password],input[type=number],input[type=date],select
         </div>
       </section>
       <section>
+        <h2>Trading mode</h2>
+        <p class="sub">In paper mode the tool only tracks a $10,000 paper portfolio. In real-money mode it also gives you your own orders, sized from what you have actually recorded buying and selling, and your alerts become those orders.</p>
+        <div class="panel">
+          <div class="row" role="radiogroup" aria-label="Trading mode">
+            <label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="radio" name="mode" value="paper"> Paper only</label>
+            <label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="radio" name="mode" value="real"> Real money</label>
+          </div>
+          <div class="help">In real-money mode, set the investment amount below to the cash you've put aside for this strategy. Record every trade with “I did this” so your next orders are right.</div>
+          <div class="row" style="margin-top:12px"><button class="btn" id="saveMode" type="button">Save mode</button></div>
+          <div class="msg" id="modeMsg" role="status"></div>
+        </div>
+      </section>
+      <section>
         <h2>Investment amount</h2>
         <p class="sub">How much you plan to put into Strategy B. Recommended orders and results are shown for this amount, and it is the starting cash for your own trade record. It's saved to your Gist, so phone and laptop match.</p>
         <div class="panel">
@@ -242,6 +255,8 @@ input[type=text],input[type=password],input[type=number],input[type=date],select
 const TZ = "Australia/Sydney";
 const START = 10000;           // paper portfolios run on $10,000
 let CAPITAL = START;           // your chosen amount
+let CFG = {};                  // settings.json: capital, mode ("paper" | "real"), recalc
+const isReal = () => CFG.mode === "real";
 let STATE = null;              // engine results (state.json)
 let TRADES = [];               // your recorded trades (mytrades.json)
 const $ = (s) => document.querySelector(s);
@@ -313,7 +328,9 @@ async function load() {
     const g = await gh(gistPath());
     const s = await readJson(g.files, "state.json");
     const cfg = await readJson(g.files, "settings.json");
+    CFG = cfg || {};
     if (cfg && cfg.capital > 0) CAPITAL = Number(cfg.capital);
+    syncModeUI();
     $("#capital").value = String(CAPITAL);
     TRADES = (await readJson(g.files, "mytrades.json")) || [];
     STATE = s;
@@ -368,8 +385,10 @@ function book(trades, prices) {
 function adherence(s) {
   const byKey = {}; TRADES.forEach((t) => { if (t.order_key) byKey[t.order_key] = t; });
   const rows = []; const seen = new Set();
-  const logs = (s.B.order_log || []).slice();
-  if (s.B.orders && (s.B.orders.items || []).length && !logs.some((o) => o.date === s.B.orders.date)) logs.unshift(s.B.orders);
+  const real = isReal();
+  const logs = ((real ? s.B.real_order_log : s.B.order_log) || []).slice();
+  const cur = real ? s.B.real_orders : s.B.orders;
+  if (cur && (cur.items || []).length && !logs.some((o) => o.date === cur.date)) logs.unshift(cur);
   for (const o of logs) for (const it of o.items) {
     const key = it.key || `${o.date}|${it.side}|${it.ticker}`;
     if (seen.has(key)) continue; seen.add(key);
@@ -379,7 +398,7 @@ function adherence(s) {
   }
   const done = rows.filter((r) => r.status === "done"), skipped = rows.filter((r) => r.status === "skipped");
   const diffs = done.filter((r) => r.diff != null).map((r) => r.item.side === "BUY" ? r.diff : -r.diff);  // + = worse than suggested
-  return { rows, done: done.length, skipped: skipped.length, open: rows.length - done.length - skipped.length,
+  return { real, rows, done: done.length, skipped: skipped.length, open: rows.length - done.length - skipped.length,
            slip: diffs.length ? diffs.reduce((a, b) => a + b, 0) / diffs.length : null };
 }
 
@@ -525,11 +544,12 @@ function renderOverview(s, bk, ad) {
 
 /* ---------- orders ---------- */
 let OPEN_FORM = null;   // key of the order whose "record" form is open
-function orderRow(it, date, ad) {
+function orderRow(it, date, ad, opts = {}) {
   const key = it.key || `${date}|${it.side}|${it.ticker}`;
-  const r = ad.rows.find((x) => x.key === key);
+  const r = opts.readonly ? null : ad.rows.find((x) => x.key === key);
   const rec = r && r.rec;
-  const units = toAmt(it.units), value = toAmt(it.value);
+  const isRealItem = key.startsWith("R|");
+  const units = isRealItem ? it.units : toAmt(it.units), value = isRealItem ? it.value : toAmt(it.value);
   const det = it.trim ? `Sell part: about ${num(units)} units at ${money(it.price, 2)} (trim to 30%)`
     : it.whole ? `Sell all units (about ${num(units)} at ${money(it.price, 2)})`
     : it.cash ? (it.side === "BUY" ? "Cash ETF: holds the uninvested money" : "Cash ETF: funds the purchases")
@@ -537,7 +557,7 @@ function orderRow(it, date, ad) {
   const status = !rec ? `<span class="chip open">Not recorded</span>`
     : rec.status === "skipped" ? `<span class="chip skip">Skipped</span>`
     : `<span class="chip done">Done: ${num(rec.units)} at ${money(rec.price, 2)}${r.diff != null ? ` (${pct(r.diff, 2)} vs suggested)` : ""}</span>`;
-  const actions = rec ? `<button class="mini" data-act="edit" data-key="${esc(key)}">Change</button><button class="mini" data-act="undo" data-key="${esc(key)}">Undo</button>`
+  const actions = opts.readonly ? "" : rec ? `<button class="mini" data-act="edit" data-key="${esc(key)}">Change</button><button class="mini" data-act="undo" data-key="${esc(key)}">Undo</button>`
     : `<button class="mini primary" data-act="edit" data-key="${esc(key)}">I did this</button><button class="mini" data-act="skip" data-key="${esc(key)}">Skipped</button>`;
   const form = OPEN_FORM === key ? `<div class="recform">
       <div><label for="f-date">Date</label><input id="f-date" type="date" value="${esc(rec && rec.date || sydParts().date)}" max="${sydParts().date}"></div>
@@ -547,27 +567,53 @@ function orderRow(it, date, ad) {
     </div>` : "";
   return `<li class="order"><span class="side ${it.side}">${it.side === "BUY" ? "Buy" : "Sell"}</span>
     <span class="tic">${esc(it.ticker)}</span><span class="amt">${money(value)}</span><span class="det">${esc(det)}</span>
-    <div class="act">${status}${actions}</div>${form}</li>`;
+    ${opts.readonly ? "" : `<div class="act">${status}${actions}</div>`}${form}</li>`;
 }
 
 function renderOrders(s, bk, ad) {
-  const o = s.B.orders; const items = (o && o.items) || []; const keep = (o && o.keep) || [];
-  const ticket = `
+  const o = s.B.orders; const keep = (o && o.keep) || [];
+  const paperItems = (o && o.items) || [];
+  const ro = s.B.real_orders;
+  const real = isReal();
+  const curItems = real ? ((ro && ro.items) || []) : paperItems;
+  const curDate = real ? (ro && ro.date) : (o && o.date);
+
+  const paperTicket = (readonly) => `
     <section class="ticket" aria-labelledby="ordersTitle">
-      <div class="ticket-head"><h2 id="ordersTitle">Strategy B orders</h2><div class="when">${o ? "Weekly check<br>" + esc(when(o.time)) : "No check yet"}</div></div>
+      <div class="ticket-head"><h2 id="ordersTitle">${readonly ? "Paper portfolio orders" : "Strategy B orders"}</h2><div class="when">${o ? "Weekly check<br>" + esc(when(o.time)) : "No check yet"}</div></div>
       <div class="perf" aria-hidden="true"></div>
-      ${items.length ? `<ul class="orders">${items.map((it) => orderRow(it, o.date, ad)).join("")}</ul>`
+      ${paperItems.length ? `<ul class="orders">${paperItems.map((it) => orderRow(it, o.date, ad, { readonly })).join("")}</ul>`
         : `<div class="none">No changes this time. Keep holding ${keep.length ? keep.map(esc).join(", ") : "everything in AAA"}.</div>`}
-      <div class="ticket-foot">Amounts are for ${money(CAPITAL)}. After you trade in Betashares, tap “I did this” and enter your actual units and price, so the tool can compare your results with the recommendations. Next weekly check: <strong>${esc(nextWeekly(s))}</strong>.</div>
+      <div class="ticket-foot">${readonly
+        ? `The $10,000 paper portfolio the strategy is measured against, shown for ${money(CAPITAL)}. Nothing to do here; your own orders are above.`
+        : `Amounts are for ${money(CAPITAL)}. After you trade in Betashares, tap “I did this” and enter your actual units and price, so the tool can compare your results with the recommendations.`} Next weekly check: <strong>${esc(nextWeekly(s))}</strong>.</div>
     </section>`;
 
-  const past = ad.rows.filter((r) => !o || r.date !== o.date).slice(0, 40).map((r) => `<tr><td>${esc(dayName(r.date))}</td>
+  let ticket;
+  if (!real) ticket = paperTicket(false);
+  else {
+    const reason = ro ? { weekly: "Weekly check", start: "First real orders", recalc: "Recalculated" }[ro.reason] || "Orders" : "";
+    const skipped = ro && ro.skipped && ro.skipped.length ? `<div class="ticket-foot">Not bought now: ${ro.skipped.map((x) => `${esc(x.ticker)} (${esc(x.why)})`).join("; ")}.</div>` : "";
+    ticket = `
+    <section class="ticket" aria-labelledby="realTitle">
+      <div class="ticket-head"><h2 id="realTitle">Your orders</h2><div class="when">${ro ? esc(reason) + "<br>" + esc(when(ro.time)) : "Coming at the next check"}</div></div>
+      <div class="perf" aria-hidden="true"></div>
+      ${!ro ? `<div class="none">Your first real orders appear at the next check: within 20 minutes during ASX hours. To get them now, open GitHub, Actions, Signal engine, Run workflow, check now.</div>`
+        : ro.items.length ? `<ul class="orders">${ro.items.map((it) => orderRow(it, ro.date, ad)).join("")}</ul>`
+        : `<div class="none">Nothing to do: your recorded holdings already match Strategy B (${(ro.targets || []).map(esc).join(", ") || "all in AAA"}).</div>`}
+      ${skipped}
+      <div class="ticket-foot">Sized from your recorded holdings and cash (${ro ? money(ro.total) : money(CAPITAL)} in total). Place these in Betashares Direct, ideally before 4pm, then tap “I did this” with your actual units and price. If you've recorded trades or changed your amount since, recalculate so the orders match.
+        <div class="row" style="margin-top:10px"><button class="mini primary" data-act="recalc">Recalculate my orders</button><span class="note" id="recalcMsg"></span></div></div>
+    </section>
+    <div style="margin-top:22px">${paperTicket(true)}</div>`;
+  }
+  const past = ad.rows.filter((r) => r.date !== curDate).slice(0, 40).map((r) => `<tr><td>${esc(dayName(r.date))}</td>
       <td><span class="side ${r.item.side}">${r.item.side === "BUY" ? "Buy" : "Sell"}</span></td><td class="t">${esc(r.item.ticker)}</td>
-      <td class="r">${money(toAmt(r.item.value))}</td>
+      <td class="r">${money(r.key.startsWith("R|") ? r.item.value : toAmt(r.item.value))}</td>
       <td>${r.status === "done" ? `<span class="chip done">Done ${money(r.rec.price, 2)}</span>` : r.status === "skipped" ? `<span class="chip skip">Skipped</span>` : `<span class="chip open">Not recorded</span>`}</td>
       <td class="r ${r.diff != null ? cls(r.item.side === "BUY" ? -r.diff : r.diff) : ""}">${r.diff != null ? pct(r.diff, 2) : ""}</td>
       <td>${r.rec ? "" : `<button class="mini" data-act="edit" data-key="${esc(r.key)}">I did this</button>`}</td></tr>`).join("");
-  const pastForm = OPEN_FORM && !items.some((it) => (it.key || "") === OPEN_FORM) ? (() => {
+  const pastForm = OPEN_FORM && !curItems.some((it) => (it.key || `${curDate}|${it.side}|${it.ticker}`) === OPEN_FORM) ? (() => {
     const r = ad.rows.find((x) => x.key === OPEN_FORM); return r ? `<ul class="orders" style="padding:0">${orderRow(r.item, r.date, ad)}</ul>` : ""; })() : "";
 
   const tickers = (s.universe || (s.rankings || []).map((r) => ({ ticker: r.ticker, theme: r.theme }))).map((u) => `<option value="${esc(u.ticker)}">${esc(u.ticker)} (${esc(u.theme)})</option>`).join("");
@@ -578,7 +624,7 @@ function renderOrders(s, bk, ad) {
       <td><button class="mini" data-act="del" data-id="${esc(t.id)}">Delete</button></td></tr>`).join("");
 
   $("#orders").innerHTML = `${ticket}
-    <section style="margin-top:26px"><h2>Earlier orders</h2><p class="sub">Every Strategy B order and whether you followed it. Price difference: positive means you paid more (or sold for less) than suggested.</p>
+    <section style="margin-top:26px"><h2>Earlier orders</h2><p class="sub">Every earlier ${real ? "real-money" : "Strategy B"} order and whether you followed it. Price difference: positive means you paid more (or sold for less) than suggested.</p>
       ${pastForm}
       <div class="panel scroll"><table><thead><tr><th>Date</th><th>Side</th><th>ETF</th><th class="r">Suggested</th><th>You</th><th class="r">Price diff</th><th></th></tr></thead>
       <tbody>${past || `<tr><td colspan="7">No earlier orders yet.</td></tr>`}</tbody></table></div></section>
@@ -596,6 +642,8 @@ function renderOrders(s, bk, ad) {
 }
 
 function findOrderItem(key) {
+  for (const o of [STATE.B.real_orders, ...(STATE.B.real_order_log || [])].filter(Boolean))
+    for (const it of o.items || []) if (it.key === key) return { it, date: o.date };
   for (const o of (STATE.B.order_log || [])) for (const it of o.items) if ((it.key || `${o.date}|${it.side}|${it.ticker}`) === key) return { it, date: o.date };
   const o = STATE.B.orders; if (o) for (const it of o.items || []) if ((it.key || `${o.date}|${it.side}|${it.ticker}`) === key) return { it, date: o.date };
   return null;
@@ -606,6 +654,11 @@ $("#orders").addEventListener("click", async (e) => {
   const act = b.dataset.act, key = b.dataset.key;
   try {
     if (act === "edit") { OPEN_FORM = key; render(); const f = $("#f-units"); if (f) f.focus(); return; }
+    if (act === "recalc") {
+      b.disabled = true; await saveSettings({ recalc: new Date().toISOString() });
+      const m = $("#recalcMsg"); if (m) m.textContent = "Requested. New orders arrive at the next check (within 20 minutes in ASX hours), or run check now in GitHub Actions.";
+      b.disabled = false; return;
+    }
     if (act === "cancel") { OPEN_FORM = null; render(); return; }
     if (act === "undo") { await mutateTrades((l) => l.filter((t) => t.order_key !== key)); return; }
     if (act === "del") { await mutateTrades((l) => l.filter((t) => t.id !== b.dataset.id)); return; }
@@ -728,6 +781,35 @@ $("#forget").addEventListener("click", () => {
   STATE = null; renderEmpty();
 });
 
+/* Merge a change into settings.json, keeping everything else (amount, mode). */
+async function saveSettings(patch) {
+  const g = await gh(gistPath());
+  const cur = (await readJson(g.files, "settings.json")) || {};
+  CFG = { ...cur, ...patch, updated: new Date().toISOString() };
+  await gh(gistPath(), { method: "PATCH", body: JSON.stringify({ files: { "settings.json": { content: JSON.stringify(CFG) } } }) });
+  syncModeUI();
+  return CFG;
+}
+function syncModeUI() {
+  document.querySelectorAll('input[name="mode"]').forEach((r) => { r.checked = r.value === (isReal() ? "real" : "paper"); });
+  const c = $("#modeChip"); if (!c) return;
+  c.hidden = false; c.textContent = isReal() ? "Real money" : "Paper";
+  c.className = "chip " + (isReal() ? "done" : "open");
+}
+$("#saveMode").addEventListener("click", async () => {
+  const m = $("#modeMsg"); const sel = document.querySelector('input[name="mode"]:checked');
+  if (!sel) { m.className = "msg bad"; m.textContent = "Choose a mode."; return; }
+  if (!store.get("gist") || !store.get("token")) { m.className = "msg bad"; m.textContent = "Connect your Gist above first."; return; }
+  if (sel.value === "real" && !confirm(`Switch to real money with ${money(CAPITAL)}? Check the investment amount below matches the cash you've set aside, then place the orders it gives you in Betashares.`)) return;
+  m.className = "msg"; m.textContent = "Saving…";
+  try {
+    await saveSettings({ mode: sel.value });
+    if (STATE && STATE.B) render();
+    m.className = "msg ok";
+    m.textContent = sel.value === "real" ? "Real-money mode is on. Your first orders arrive at the next check (within 20 minutes in ASX hours), or run check now in GitHub Actions." : "Back to paper only.";
+  } catch (e) { m.className = "msg bad"; m.textContent = e.message; }
+});
+
 $("#saveCapital").addEventListener("click", async () => {
   const m = $("#capitalMsg");
   const v = Number(String($("#capital").value).replace(/[$,\s]/g, ""));
@@ -735,8 +817,7 @@ $("#saveCapital").addEventListener("click", async () => {
   if (!store.get("gist") || !store.get("token")) { m.className = "msg bad"; m.textContent = "Connect your Gist above first."; return; }
   m.className = "msg"; m.textContent = "Saving…";
   try {
-    await gh("/gists/" + encodeURIComponent(store.get("gist")), { method: "PATCH",
-      body: JSON.stringify({ files: { "settings.json": { content: JSON.stringify({ capital: Math.round(v), updated: new Date().toISOString() }) } } }) });
+    await saveSettings({ capital: Math.round(v) });
     CAPITAL = Math.round(v); $("#capital").value = String(CAPITAL);
     if (STATE && STATE.B) render(STATE);
     m.className = "msg ok"; m.textContent = `Saved. Everything is now shown for ${money(CAPITAL)}, and alerts will use it from the next check.`;
