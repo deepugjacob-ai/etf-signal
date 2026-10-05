@@ -1,0 +1,75 @@
+name: Signal engine
+
+on:
+  schedule:
+    # Every 20 minutes. Times are UTC; the engine itself only acts during ASX hours (Sydney time),
+    # so this covers both daylight-saving and standard time. GitHub often delays or skips these, so an outside
+    # timer (cron-job.org) also starts the workflow with mode "scheduled". Double runs are harmless.
+    - cron: "*/20 23 * * 0-4"
+    - cron: "*/20 0-6 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "What to run"
+        type: choice
+        options:
+          - check now
+          - test alert
+          - scheduled
+        default: check now
+
+permissions:
+  contents: write
+
+concurrency:
+  group: signal-engine
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      - name: Run engine
+        env:
+          EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          VAPID_SUB: https://${{ github.repository_owner }}.github.io
+          MODE: ${{ inputs.mode }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$MODE" = "test alert" ]; then
+            python -m engine.main --test-push
+          elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$MODE" = "scheduled" ]; then
+            # started by the outside timer (cron-job.org) or the dashboard's Update now: normal ASX-hours rules
+            python -m engine.main
+          elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            python -m engine.main --force
+          else
+            python -m engine.main
+          fi
+
+      # GitHub pauses scheduled workflows after 60 days without repository activity.
+      # This makes one tiny commit per month so the schedule keeps running.
+      - name: Keep schedule alive
+        if: github.event_name == 'schedule' || inputs.mode == 'scheduled'
+        run: |
+          M=$(date -u +%Y-%m)
+          if [ "$(cat .keepalive 2>/dev/null)" != "$M" ]; then
+            echo "$M" > .keepalive
+            git config user.name "signal-bot"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .keepalive
+            git commit -m "Keep schedule alive ($M)"
+            git push
+          fi
