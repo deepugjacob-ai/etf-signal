@@ -106,15 +106,20 @@ def load(key: str, now: dt.datetime):
     market_open = fresh >= 0.5 * len(symbols())
     tday = pd.Timestamp(today)
     divs = dividends_today(key, today) if market_open else {}
-    if market_open and tday not in adj.index:
-        ratio = (adj.ffill().iloc[-1] / close.ffill().iloc[-1])
-        # Ex-dividend fix: on an ex-date the market price drops by the distribution, which the history does not
-        # yet reflect. Adding it back gives the true total-return price, so no false fall below the trend line.
-        row = pd.Series({s: (live_raw[s] + divs.get(s, 0.0)) * ratio[s] for s in live_raw}, dtype=float)
-        adj.loc[tday] = row
-        close.loc[tday] = pd.Series(live_raw, dtype=float)
-        turnover.loc[tday] = float("nan")
-        adj, close, turnover = adj.sort_index(), close.sort_index(), turnover.sort_index()
+    if market_open:
+        # Today's row: use the official daily close where EODHD has already published it (just after 4pm some
+        # ETFs have it and others don't), otherwise the delayed live price. The adjustment ratio always comes
+        # from the last day BEFORE today.
+        before_adj, before_close = adj.loc[adj.index < tday], close.loc[close.index < tday]
+        ratio = before_adj.ffill().iloc[-1] / before_close.ffill().iloc[-1]
+        if tday not in adj.index:
+            adj.loc[tday] = float("nan"); close.loc[tday] = float("nan"); turnover.loc[tday] = float("nan")
+            adj, close, turnover = adj.sort_index(), close.sort_index(), turnover.sort_index()
+        for s_, p in live_raw.items():
+            if pd.isna(adj.at[tday, s_]) or pd.isna(close.at[tday, s_]):
+                # Ex-dividend fix: add back a distribution going ex today, so its price drop isn't read as a fall
+                adj.at[tday, s_] = (p + divs.get(s_, 0.0)) * ratio[s_]
+                close.at[tday, s_] = p
     raw_last = close.ffill().iloc[-1].to_dict()
     info = {"market_open": bool(market_open), "fresh_quotes": fresh, "rejected": rejected,
             "quote_time": newest.isoformat() if newest else None,

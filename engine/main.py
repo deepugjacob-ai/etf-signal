@@ -11,6 +11,7 @@ from .indicators import clean_prices, compute
 from .notify import ensure_keys, send_all
 from . import mine as MINE
 from . import real as REAL
+from . import charts as CHARTS
 from .store import Store
 from .strategies import b_new_weights, decide_a_entries, decide_a_exits, decide_b
 
@@ -95,7 +96,7 @@ def add_alert(state, alerts, now, title, body, tag):
     state["alerts"] = ([a] + state.get("alerts", []))[:40]
 
 
-def run(state, now, key, alerts, scale=1.0, capital=C.START_CAPITAL, mytrades=None, mode="paper", recalc=None):
+def run(state, now, key, alerts, scale=1.0, capital=C.START_CAPITAL, mytrades=None, mode="paper", recalc=None, prev_charts=None):
     today = now.date()
     adj, turnover, raw_last, info, close = load_data(key, now)
     px = clean_prices(adj)
@@ -236,6 +237,11 @@ def run(state, now, key, alerts, scale=1.0, capital=C.START_CAPITAL, mytrades=No
     state["universe"] = [{"ticker": k, "theme": C.THEME_OF[k]} for k in C.UNIVERSE] + [{"ticker": C.CASH, "theme": "Cash"}]
     state["prices"] = {k: v for k, v in raw_last.items() if k in C.UNIVERSE or k == C.CASH}
     state["mine"] = MINE.compute(mytrades or [], px.ffill(), close.ffill(), capital, state["history"], today)
+    try:
+        return CHARTS.build(CHARTS.wanted(state), close.ffill(), px.ffill(), ind["sma"], prev_charts, raw_last, info, now)
+    except Exception as e:          # charts are a nice-to-have: never let them break the strategy run
+        print("Charts skipped:", type(e).__name__, e)
+        return None
     state["prices_date"] = tstr
 
 
@@ -277,11 +283,11 @@ def main(argv=None):
         return 0
 
     key = os.environ.get("EODHD_API_KEY")
-    alerts, code = [], 0
+    alerts, code, charts = [], 0, None
     try:
         if not key:
             raise RuntimeError("EODHD_API_KEY is not set")
-        run(state, now, key, alerts, scale, capital, mytrades, mode, recalc)
+        charts = run(state, now, key, alerts, scale, capital, mytrades, mode, recalc, store.read("charts.json", {}) or {})
         state["capital"] = capital
         state["mode"] = mode
         state["status"] = {**state.get("status", {}), "ok": True, "checked": now.isoformat(), "message": "Up to date"}
@@ -306,7 +312,10 @@ def main(argv=None):
     state["status"]["push_errors"] = push_errors[-5:]
     state["status"]["devices"] = len(subs)
     state["public_key"] = keys["public"]
-    store.write({"state.json": clean(state)})
+    files = {"state.json": clean(state)}
+    if charts:
+        files["charts.json"] = clean(charts)
+    store.write(files)
     print(f"{now:%Y-%m-%d %H:%M} done. Alerts: {[x['title'] for x in alerts]}")
     return code
 
