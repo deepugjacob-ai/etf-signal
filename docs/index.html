@@ -162,6 +162,20 @@ input[type=text],input[type=password],input[type=number],input[type=date],select
 .msg.ok{color:var(--buy)} .msg.bad{color:var(--sell)}
 .note{font-size:.88rem;color:var(--muted)}
 [hidden]{display:none!important}
+button.etf{all:unset;cursor:pointer;font-weight:700;border-bottom:1.5px dotted var(--muted)}
+button.etf:focus-visible{outline:3px solid var(--navy);outline-offset:2px;border-radius:4px}
+.sheet-bg{position:fixed;inset:0;background:rgba(10,15,22,.45);z-index:50;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);width:100%;max-width:720px;max-height:92vh;overflow-y:auto;border-radius:18px 18px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom))}
+@media (min-width:760px){.sheet-bg{align-items:center}.sheet{border-radius:18px}}
+.sheet-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.sheet-head h2{font-size:1.5rem;margin:0}
+.big{font-weight:800;font-size:1.8rem;letter-spacing:-.02em}
+.seg{display:inline-flex;gap:4px;background:var(--ground);border-radius:10px;padding:3px;margin:12px 0 8px}
+.seg button{border:0;background:transparent;border-radius:8px;padding:6px 12px;font-weight:500;cursor:pointer;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.facts2{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0}
+.facts2 div{background:var(--ground);border-radius:10px;padding:8px 10px;font-size:.84rem;color:var(--muted)}
+.facts2 b{display:block;color:var(--ink);font-size:1rem}
 @media (max-width:480px){.hide-sm{display:none}}
 </style>
 </head>
@@ -207,6 +221,22 @@ input[type=text],input[type=password],input[type=number],input[type=date],select
             <button class="btn ghost" id="forget" type="button">Forget on this device</button>
           </div>
           <div class="msg" id="saveMsg" role="status"></div>
+        </div>
+      </section>
+      <section>
+        <h2>Live updates (optional)</h2>
+        <p class="sub">GitHub's own timer often skips runs. With an Actions token here, Refresh asks the engine for fresh prices during ASX hours (about a minute). Use a fine-grained token limited to your etf-signal repository with “Actions: read and write” permission.</p>
+        <div class="panel">
+          <div class="field">
+            <label for="atoken">GitHub Actions token</label>
+            <input id="atoken" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+          </div>
+          <div class="field">
+            <label for="repo">Repository</label>
+            <input id="repo" type="text" autocomplete="off" spellcheck="false" placeholder="your-username/etf-signal">
+          </div>
+          <div class="row"><button class="btn" id="saveLive" type="button">Save</button></div>
+          <div class="msg" id="liveMsg" role="status"></div>
         </div>
       </section>
       <section>
@@ -333,9 +363,11 @@ async function load() {
     syncModeUI();
     $("#capital").value = String(CAPITAL);
     TRADES = (await readJson(g.files, "mytrades.json")) || [];
+    try { CHARTS = await readJson(g.files, "charts.json"); } catch (e) { CHARTS = null; }
     STATE = s;
     if (!s || !s.B) { renderEmpty("Connected. The engine hasn't saved any results yet: run it once from GitHub Actions (Run workflow, check now)."); return; }
     render();
+    if (SHEET.k) renderSheet();
   } catch (e) {
     banner("err", "Couldn't load your data", e.message);
   } finally {
@@ -402,9 +434,100 @@ function adherence(s) {
            slip: diffs.length ? diffs.reduce((a, b) => a + b, 0) / diffs.length : null };
 }
 
+/* ---------- ETF price sheet ---------- */
+let CHARTS = null;
+const etf = (k) => CHARTS && CHARTS.series && CHARTS.series[k] ? `<button class="etf" data-etf="${esc(k)}" aria-label="Show ${esc(k)} price chart">${esc(k)}</button>` : esc(k);
+let SHEET = { k: null, range: 63 };
+function priceChart(k, range) {
+  const c = CHARTS.series[k]; const n = Math.min(range, CHARTS.dates.length);
+  const d = CHARTS.dates.slice(-n), close = c.close.slice(-n), trend = c.trend.slice(-n);
+  const pts = (arr) => arr.map((v, i) => ({ d: d[i], v }));
+  const bk = book(TRADES, STATE.prices || {}); const h = bk.holdings.find((x) => x.ticker === k);
+  const series = [
+    { points: pts(trend.map((v) => v == null ? null : v * 0.98)), color: "var(--sell)", dash: "2 4", w: 1.4 },
+    { points: pts(trend.map((v) => v == null ? null : v * 1.01)), color: "var(--buy)", dash: "6 4", w: 1.4 },
+    { points: pts(trend), color: "var(--M)", w: 1.8 },
+    { points: pts(close), color: "var(--navy)", w: 2.6 },
+  ];
+  if (h && h.units > 0) series.unshift({ points: d.map((x) => ({ d: x, v: h.cost / h.units })), color: "var(--Y)", dash: "1 3", w: 1.6 });
+  const items = [["Price", "var(--navy)"], ["200-day trend", "var(--M)"], ["Buy line (+1%)", "var(--buy)", 1], ["Sell line (−2%)", "var(--sell)", 1]];
+  if (h && h.units > 0) items.push(["Your average cost", "var(--Y)", 1]);
+  return legend(items) + lineChart(series, `${k} price over ${n} trading days`, dayName, (v) => money(v, 2));
+}
+function openSheet(k) {
+  SHEET.k = k; SHEET.last = document.activeElement;
+  renderSheet();
+}
+function renderSheet() {
+  const k = SHEET.k; if (!k || !CHARTS || !CHARTS.series[k]) return;
+  const c = CHARTS.series[k]; const u = (STATE.universe || []).find((x) => x.ticker === k) || {};
+  const intra = (CHARTS.intraday || {})[k] || [];
+  const lastClose = c.close.filter((v) => v != null); const now = intra.length ? intra[intra.length - 1][1] : lastClose[lastClose.length - 1];
+  const prevClose = lastClose.length >= 2 ? (intra.length && CHARTS.dates[CHARTS.dates.length - 1] === CHARTS.intraday_date ? lastClose[lastClose.length - 2] : lastClose[lastClose.length - 2]) : null;
+  const t = c.trend[c.trend.length - 1];
+  const vsTrend = t ? now / t - 1 : null;
+  const rk = (STATE.rankings || []).find((r) => r.ticker === k);
+  const heldB = (STATE.B.view && STATE.B.view.holdings || []).some((x) => x.ticker === k);
+  const status = vsTrend == null ? "Not enough history" : vsTrend > 0.01 ? "Above the buy line" : vsTrend > -0.02 ? "Between the lines: can be held, not bought" : "Below the sell line";
+  const ranges = [[21, "1M"], [63, "3M"], [126, "6M"], [252, "1Y"]];
+  const intraChart = intra.length >= 2 ? `<h3 style="margin-top:16px">Today</h3>${lineChart([{ points: intra.map(([tm, v]) => ({ d: tm, v })), color: "var(--navy)", w: 2.2 }], `${k} prices today`, (x) => x, (v) => money(v, 2))}<p class="chart-note">Snapshots from each check today, about 20 minutes delayed.</p>` : "";
+  let bg = document.querySelector(".sheet-bg");
+  if (!bg) { bg = document.createElement("div"); bg.className = "sheet-bg"; document.body.appendChild(bg); bg.addEventListener("click", (e) => { if (e.target === bg) closeSheet(); }); }
+  bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-head"><div><h2 id="sheetTitle">${esc(k)}</h2><div class="note">${esc(u.theme || "")}${heldB ? " · held by Strategy B" : ""}</div></div>
+      <button class="mini" id="sheetClose" aria-label="Close">Close</button></div>
+    <div style="margin-top:10px"><span class="big">${money(now, 2)}</span> ${prevClose ? `<span class="${cls(now - prevClose)}">${pct(now / prevClose - 1, 2)}</span>` : ""}
+      <div class="note">${intra.length ? "Delayed ~20 min, " + esc(intra[intra.length - 1][0]) + " today" : "Last close " + esc(dayName(CHARTS.dates[CHARTS.dates.length - 1]))}</div></div>
+    <div class="facts2"><div>Vs trend line<b class="${cls(vsTrend)}">${pct(vsTrend)}</b></div><div>Momentum<b>${rk ? pct(rk.score) : "–"}</b></div><div>Rank<b>${rk ? "#" + rk.rank : "Not ranked"}</b></div></div>
+    <p class="note" style="margin:0">${esc(status)}.</p>
+    <div class="seg" role="group" aria-label="Chart period">${ranges.map(([n, l]) => `<button data-range="${n}" aria-pressed="${SHEET.range === n}">${l}</button>`).join("")}</div>
+    ${priceChart(k, SHEET.range)}${intraChart}</div>`;
+  bg.querySelector("#sheetClose").addEventListener("click", closeSheet);
+  bg.querySelectorAll("[data-range]").forEach((b) => b.addEventListener("click", () => { SHEET.range = +b.dataset.range; renderSheet(); }));
+  bg.querySelector("#sheetClose").focus();
+}
+function closeSheet() {
+  const bg = document.querySelector(".sheet-bg"); if (bg) bg.remove();
+  const back = SHEET.last; SHEET.k = null; if (back && back.focus) back.focus();
+}
+document.addEventListener("click", (e) => { const b = e.target.closest("button[data-etf]"); if (b) { e.preventDefault(); openSheet(b.dataset.etf); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && SHEET.k) closeSheet(); });
+
+/* ---------- Update now: ask the engine for fresh prices (needs an Actions token) ---------- */
+async function updateNow() {
+  const tok = store.get("atoken"), repo = store.get("repo");
+  const now = sydParts(); const mins = now.h * 60 + now.m;
+  const marketHours = !["Sat", "Sun"].includes(now.wd) && mins >= 595 && mins <= 990;
+  if (!tok || !repo || !marketHours) return load();
+  const before = STATE && STATE.status && STATE.status.checked;
+  const btn = $("#refresh"); btn.disabled = true; btn.textContent = "Updating…";
+  try {
+    const r = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/engine.yml/dispatches`, {
+      method: "POST", headers: { "Authorization": "Bearer " + tok, "Accept": "application/vnd.github+json", "Content-Type": "application/json" },
+      body: JSON.stringify({ ref: "main", inputs: { mode: "scheduled" } }) });
+    if (r.status !== 204) throw new Error(r.status === 401 || r.status === 403 ? "The Actions token was rejected. Check it in Settings." : `GitHub returned ${r.status}.`);
+    for (let i = 0; i < 14; i++) {        // poll for up to about 3.5 minutes
+      await new Promise((res) => setTimeout(res, 15000));
+      btn.textContent = `Updating… ${Math.min(99, (i + 1) * 15)}s`;
+      const g = await gh(gistPath()); const s = await readJson(g.files, "state.json");
+      if (s && s.status && s.status.checked !== before) { await load(); return; }
+    }
+    banner("warn", "Still waiting for the engine", "GitHub hasn't finished the run yet. Try Refresh again in a minute.");
+  } catch (e) { banner("err", "Couldn't start an update", e.message); }
+  finally { btn.disabled = false; btn.textContent = "Refresh"; }
+}
+$("#atoken").value = store.get("atoken"); $("#repo").value = store.get("repo");
+$("#saveLive").addEventListener("click", () => {
+  const t = $("#atoken").value.trim(), r = $("#repo").value.trim().replace(/^https:\/\/github.com\//, "").replace(/\/$/, "");
+  const m = $("#liveMsg");
+  if ((t && !/^[\w.-]+\/[\w.-]+$/.test(r))) { m.className = "msg bad"; m.textContent = "Enter the repository as your-username/etf-signal."; return; }
+  t ? store.set("atoken", t) : store.del("atoken"); r ? store.set("repo", r) : store.del("repo");
+  m.className = "msg ok"; m.textContent = t ? "Saved on this device. During ASX hours, Refresh now fetches fresh prices." : "Removed. Refresh just reloads saved results.";
+});
+
 /* ---------- charts (hand-drawn SVG, no external code) ---------- */
 const chartNarrow = () => window.innerWidth < 600 || window.innerWidth >= 820;
-function lineChart(series, label) {
+function lineChart(series, label, fmtX = dayName, fmtY = kfmt) {
   const pts = series.flatMap((s) => s.points.map((p) => p.v)).filter((v) => !bad(v));
   const dates = [...new Set(series.flatMap((s) => s.points.map((p) => p.d)))].sort();
   if (dates.length < 2 || !pts.length) return `<p class="chart-note">The chart appears after the second trading day.</p>`;
@@ -414,14 +537,14 @@ function lineChart(series, label) {
   const xi = Object.fromEntries(dates.map((d, i) => [d, i]));
   const x = (d) => P.l + (xi[d] / (dates.length - 1)) * (W - P.l - P.r);
   const y = (v) => P.t + (1 - (v - lo) / (hi - lo)) * (H - P.t - P.b);
-  const grid = [0, 0.5, 1].map((f) => { const v = lo + (hi - lo) * f; return `<line x1="${P.l}" x2="${W - P.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${P.l - 8}" y="${y(v) + 4}" text-anchor="end" font-size="13" fill="var(--muted)">${kfmt(v)}</text>`; }).join("");
+  const grid = [0, 0.5, 1].map((f) => { const v = lo + (hi - lo) * f; return `<line x1="${P.l}" x2="${W - P.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${P.l - 8}" y="${y(v) + 4}" text-anchor="end" font-size="13" fill="var(--muted)">${fmtY(v)}</text>`; }).join("");
   const lines = series.map((s) => {
     const p = s.points.filter((q) => !bad(q.v)).map((q) => `${x(q.d).toFixed(1)},${y(q.v).toFixed(1)}`).join(" ");
     return p ? `<polyline fill="none" stroke="${s.color}" stroke-width="${s.w || 2}" ${s.dash ? `stroke-dasharray="${s.dash}"` : ""} stroke-linejoin="round" stroke-linecap="round" points="${p}"/>` : "";
   }).join("");
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">${grid}
-    <text x="${P.l}" y="${H - 6}" font-size="13" fill="var(--muted)">${esc(dayName(dates[0]))}</text>
-    <text x="${W - P.r}" y="${H - 6}" text-anchor="end" font-size="13" fill="var(--muted)">${esc(dayName(dates[dates.length - 1]))}</text>${lines}</svg>`;
+    <text x="${P.l}" y="${H - 6}" font-size="13" fill="var(--muted)">${esc(fmtX(dates[0]))}</text>
+    <text x="${W - P.r}" y="${H - 6}" text-anchor="end" font-size="13" fill="var(--muted)">${esc(fmtX(dates[dates.length - 1]))}</text>${lines}</svg>`;
 }
 const legend = (items) => `<div class="legend">${items.map(([n, c, dash]) => `<span><span class="swatch" style="background:${c};${dash ? "opacity:.75" : ""}"></span>${esc(n)}</span>`).join("")}</div>`;
 function donut(items, label) {
@@ -566,7 +689,7 @@ function orderRow(it, date, ad, opts = {}) {
       <div class="row"><button class="mini primary" data-act="save" data-key="${esc(key)}">Save trade</button><button class="mini" data-act="cancel">Cancel</button><span class="note" id="f-msg"></span></div>
     </div>` : "";
   return `<li class="order"><span class="side ${it.side}">${it.side === "BUY" ? "Buy" : "Sell"}</span>
-    <span class="tic">${esc(it.ticker)}</span><span class="amt">${money(value)}</span><span class="det">${esc(det)}</span>
+    <span class="tic">${etf(it.ticker)}</span><span class="amt">${money(value)}</span><span class="det">${esc(det)}</span>
     ${opts.readonly ? "" : `<div class="act">${status}${actions}</div>`}${form}</li>`;
 }
 
@@ -702,7 +825,7 @@ function renderHoldings(s, bk) {
   const your = bk.holdings.map((x) => {
     const lots = x.lots; const shortL = lots.filter((l) => l.days < 365);
     const tag = shortL.length ? taxTag(shortL[0].days, shortL.map((l) => l.longFrom).sort()[0]) : `<span class="tag long">Long-term</span>`;
-    return `<tr><td><div class="t">${esc(x.ticker)}</div><div class="th">${lots.length} parcel${lots.length === 1 ? "" : "s"}</div><div style="margin-top:4px">${tag}</div></td>
+    return `<tr><td><div class="t">${etf(x.ticker)}</div><div class="th">${lots.length} parcel${lots.length === 1 ? "" : "s"}</div><div style="margin-top:4px">${tag}</div></td>
       <td class="r hide-sm">${num(x.units)}</td><td class="r">${money(x.value)}<div class="th">${num(x.units)} at ${money(x.price, 2)}</div></td>
       <td class="r ${cls(x.gain)}">${signed$(x.gain)}<div class="th">${pct(x.cost ? x.gain / x.cost : null)}</div></td></tr>`;
   }).join("");
@@ -712,7 +835,7 @@ function renderHoldings(s, bk) {
     const v = S.view || { equity: START, cash: START, holdings: [] };
     const rows = v.holdings.map((x) => {
       const days = x.since ? daysBetween(x.since, today) : null;
-      return `<tr><td><div class="t">${esc(x.ticker)}</div><div class="th">${esc(x.theme)}${showRank && x.rank ? ", rank " + x.rank : ""}</div></td>
+      return `<tr><td><div class="t">${etf(x.ticker)}</div><div class="th">${esc(x.theme)}${showRank && x.rank ? ", rank " + x.rank : ""}</div></td>
         <td class="r">${money(toAmt(x.value))}<div class="bar" aria-hidden="true"><i style="width:${Math.min(100, x.weight * 100).toFixed(1)}%"></i></div></td>
         <td class="r">${(x.weight * 100).toFixed(1)}%</td>
         <td class="r ${cls(x.gain)}">${signed$(toAmt(x.gain))}<div class="th">${pct(x.cost ? x.gain / x.cost : null)}</div></td>
@@ -745,7 +868,7 @@ function renderRankings(s) {
   const rk = (s.rankings || []).map((r) => {
     const status = r.heldB ? `<span class="tag held">Held</span>` : !r.in_trend ? `<span class="tag below">Below buy line</span>`
       : (heldThemes[r.theme] || 0) >= 2 ? `<span class="tag trend">Theme full</span>` : `<span class="tag trend">In trend</span>`;
-    return `<tr class="${r.heldB ? "held" : ""}"><td>${r.rank}</td><td><div class="t">${esc(r.ticker)}</div><div class="th">${esc(r.theme)}</div></td>
+    return `<tr class="${r.heldB ? "held" : ""}"><td>${r.rank}</td><td><div class="t">${etf(r.ticker)}</div><div class="th">${esc(r.theme)}</div></td>
       <td class="r ${cls(r.score)}">${pct(r.score)}</td><td class="r hide-sm">${pct(r.vs_trend)}</td><td class="r">${status}</td></tr>`;
   }).join("");
   $("#rankings").innerHTML = `<section><h2>Momentum rankings</h2>
@@ -915,7 +1038,7 @@ $("#disablePush").addEventListener("click", async () => {
 });
 
 /* ---------- refresh ---------- */
-$("#refresh").addEventListener("click", load);
+$("#refresh").addEventListener("click", updateNow);
 let NARROW = chartNarrow();
 window.addEventListener("resize", () => { const n = chartNarrow(); if (n !== NARROW) { NARROW = n; render(); } });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && !OPEN_FORM) load(); });
