@@ -30,6 +30,9 @@ def symbols():
     return C.UNIVERSE + [C.CASH, C.INDEX]
 
 
+EXTRA = []        # extra tickers to price (your core holdings); never required for the strategy itself
+
+
 def history(key: str, today: dt.date, days: int = C.HISTORY_DAYS):
     frm = (today - dt.timedelta(days=days)).isoformat()
 
@@ -41,8 +44,16 @@ def history(key: str, today: dt.date, days: int = C.HISTORY_DAYS):
         df["date"] = pd.to_datetime(df["date"])
         return sym, df.set_index("date")
 
+    def soft(sym):            # a core ticker that can't be fetched is skipped, not fatal
+        try:
+            return one(sym)
+        except Exception:
+            return sym, None
+
     with ThreadPoolExecutor(max_workers=6) as ex:
         res = dict(ex.map(one, symbols()))
+        extra = [s for s in EXTRA if s not in res]
+        res.update({s: df for s, df in ex.map(soft, extra) if df is not None})
     adj = pd.DataFrame({s: res[s]["adjusted_close"].astype(float) for s in res}).sort_index()
     close = pd.DataFrame({s: res[s]["close"].astype(float) for s in res}).sort_index()
     vol = pd.DataFrame({s: res[s]["volume"].astype(float) for s in res}).sort_index()
@@ -50,7 +61,7 @@ def history(key: str, today: dt.date, days: int = C.HISTORY_DAYS):
 
 
 def quotes(key: str):
-    syms = symbols()
+    syms = symbols() + [s for s in EXTRA if s not in symbols()]
     out = {}
     for i in range(0, len(syms), 20):
         chunk = syms[i:i + 20]
@@ -88,7 +99,7 @@ def load(key: str, now: dt.datetime):
     eod_last = adj.index[-1].date().isoformat()
     q = quotes(key)
     live_raw, fresh, rejected, newest = {}, 0, [], None
-    for s in symbols():
+    for s in symbols() + [s for s in EXTRA if s not in symbols() and s in close.columns]:
         x = q.get(code(s), {})
         p, ts = x.get("close"), x.get("timestamp")
         if not isinstance(p, (int, float)) or not isinstance(ts, (int, float)) or p <= 0:
