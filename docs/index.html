@@ -264,8 +264,8 @@ button.etf:focus-visible{outline:3px solid var(--navy);outline-offset:2px;border
         </div>
       </section>
       <section>
-        <h2>Investment amount</h2>
-        <p class="sub">How much you plan to put into Strategy B. Recommended orders and results are shown for this amount, and it is the starting cash for your own trade record. It's saved to your Gist, so phone and laptop match.</p>
+        <h2>Starting amount</h2>
+        <p class="sub">Only used until you log money in and out on the Overview (“Add money”). After that, the tool uses what you've actually put in, on the days you put it in.</p>
         <div class="panel">
           <div class="field">
             <label for="capital">Amount (A$)</label>
@@ -356,6 +356,8 @@ async function mutateTrades(fn) {
   list = fn(list);
   await gh(gistPath(), { method: "PATCH", body: JSON.stringify({ files: { "mytrades.json": { content: JSON.stringify(list) } } }) });
   TRADES = list;
+  const dep = list.filter((t) => t.status === "done" && (t.side === "DEPOSIT" || t.side === "WITHDRAW") && t.amount > 0);
+  if (dep.length) { const net = dep.reduce((x, f) => x + (f.side === "DEPOSIT" ? 1 : -1) * f.amount, 0); if (net > 0) CAPITAL = net; }
   render();
 }
 const newId = () => "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -376,6 +378,8 @@ async function load() {
     TRADES = (await readJson(g.files, "mytrades.json")) || [];
     try { CHARTS = await readJson(g.files, "charts.json"); } catch (e) { CHARTS = null; }
     STATE = s;
+    const dep = (TRADES || []).filter((t) => t.status === "done" && (t.side === "DEPOSIT" || t.side === "WITHDRAW") && t.amount > 0);
+    if (dep.length) { const net = dep.reduce((a, f) => a + (f.side === "DEPOSIT" ? 1 : -1) * f.amount, 0); if (net > 0) CAPITAL = net; }
     if (!s || !s.B) { renderEmpty("Connected. The engine hasn't saved any results yet: run it once from GitHub Actions (Run workflow, check now)."); return; }
     render();
     if (SHEET.k) renderSheet();
@@ -400,7 +404,9 @@ function book(trades, prices) {
   const known = STATE && STATE.universe ? new Set(STATE.universe.map((u) => u.ticker)) : null;
   const done = trades.filter((t) => t.status === "done" && t.units > 0 && t.price > 0 && (!known || known.has(t.ticker)))
     .sort((a, b) => a.date.localeCompare(b.date) || (a.side === "BUY" ? -1 : 1));
-  const lots = {}; let cash = CAPITAL; const realised = []; const today = sydParts().date;
+  const flows = trades.filter((t) => t.status === "done" && (t.side === "DEPOSIT" || t.side === "WITHDRAW") && t.amount > 0 && t.date <= sydParts().date);
+  const contributed = flows.length ? flows.reduce((a, f) => a + (f.side === "DEPOSIT" ? 1 : -1) * f.amount, 0) : (CFG.capital > 0 ? Number(CFG.capital) : CAPITAL);
+  const lots = {}; let cash = contributed; const realised = []; const today = sydParts().date;
   for (const t of done) {
     if (t.side === "BUY") { cash -= t.units * t.price; (lots[t.ticker] = lots[t.ticker] || []).push({ date: t.date, units: +t.units, price: +t.price }); }
     else {
@@ -421,7 +427,7 @@ function book(trades, prices) {
     return { ticker: k, units, cost, price, value, gain: value == null ? null : value - cost, lots: lotv };
   }).sort((a, b) => (b.value || 0) - (a.value || 0));
   const value = cash + holdings.reduce((a, h) => a + (h.value || 0), 0);
-  return { holdings, cash, value, realised, count: done.length };
+  return { holdings, cash, value, realised, count: done.length, contributed, flows, hasFlows: flows.length > 0 };
 }
 
 /* ---------- did you follow the orders? ---------- */
@@ -599,7 +605,7 @@ function positionStats(k, units, lots) {
 }
 function positionsCard(s, bk) {
   if (!bk.count) return `<section class="panel" style="margin-bottom:16px"><h3>Your holdings</h3>
-    <p class="note" style="margin:0">You haven't recorded any purchases yet. After you buy in Betashares, record it in Orders: tap “I did this” on an order, or use “Record another trade”.</p></section>`;
+    <p class="note" style="margin:0 0 10px">${bk.hasFlows ? `You've put in ${money(bk.contributed)} and haven't recorded any purchases yet.` : "You haven't recorded any purchases yet."} After you buy in Betashares, record it in Orders: tap “I did this” on an order, or use “Record another trade”.</p>${moneyControls()}</section>`;
   let invested = 0, worth = 0, dayTotal = 0, dayKnown = false, dayLabel = null;
   const rows = bk.holdings.map((h) => {
     const st = positionStats(h.ticker, h.units, h.lots);
@@ -622,10 +628,13 @@ function positionsCard(s, bk) {
   const checked = (s.status || {}).checked;
   return `<section class="panel" style="margin-bottom:16px"><h3>Your holdings</h3>
     <ul class="positions">${rows}</ul>
-    <div class="postotal"><span>Invested <b>${money(invested)}</b></span><span>Worth <b>${money(worth)}</b></span>
+    <div class="postotal"><span>Spent on ETFs <b>${money(invested)}</b></span><span>Now worth <b>${money(worth)}</b></span>
       <span>Gain <b class="${cls(gainAll)}">${signed$(gainAll)} (${pct(invested ? gainAll / invested : null)})</b></span>
       ${dayKnown ? `<span>${esc(dayLabel === "Today" ? "Today" : dayLabel)} <b class="${cls(dayTotal)}">${signed$(dayTotal)}</b></span>` : ""}
       <span>Cash <b>${money(Math.abs(bk.cash) < 0.5 ? 0 : bk.cash)}</b></span></div>
+    <div class="postotal"><span>You've put in <b>${money(bk.contributed)}</b></span><span>Worth <b>${money(worth + bk.cash)}</b></span>
+      <span>Overall gain <b class="${cls(worth + bk.cash - bk.contributed)}">${signed$(worth + bk.cash - bk.contributed)}</b></span></div>
+    ${moneyControls()}
     <p class="chart-note">Prices about 20 minutes delayed, last checked ${esc(when(checked))}. Tap an ETF for its chart with your purchase price marked.</p></section>`;
 }
 function modeBar() {
@@ -641,6 +650,47 @@ document.addEventListener("click", async (e) => {
   if (want === "real" && !confirm(`Switch to real money? Orders will be sized from your recorded holdings and your investment amount of ${money(CAPITAL)}.`)) return;
   try { await saveSettings({ mode: want }); render(); banner(want === "real" ? "warn" : null, "Real-money mode is on", "Your own orders arrive at the next check (within 15 minutes in ASX hours), or tap Recalculate in Orders."); }
   catch (err) { banner("err", "Couldn't change mode", err.message); }
+});
+
+let MONEY_FORM = null;   // "DEPOSIT" | "WITHDRAW" | null
+function moneyControls() {
+  const f = MONEY_FORM;
+  return `<div class="row" style="margin-top:12px"><button class="mini primary" data-money="DEPOSIT">Add money</button><button class="mini" data-money="WITHDRAW">Take money out</button></div>
+    ${f ? `<div class="recform" style="margin-top:10px">
+      <div><label for="mf-date">Date</label><input id="mf-date" type="date" value="${sydParts().date}" max="${sydParts().date}"></div>
+      <div><label for="mf-amt">Amount (A$)</label><input id="mf-amt" type="number" step="any" min="0" inputmode="decimal"></div>
+      <div></div>
+      <div class="row"><button class="mini primary" data-money-save="${f}">${f === "DEPOSIT" ? "Save money in" : "Save money out"}</button><button class="mini" data-money-cancel>Cancel</button><span class="note" id="mf-msg"></span></div>
+      <div class="row note">${f === "DEPOSIT" ? "Log money when you move it into Betashares for this strategy, on the day you move it." : "Log money you take out of the strategy."}</div></div>` : ""}`;
+}
+document.addEventListener("click", async (e) => {
+  const open = e.target.closest("button[data-money]");
+  if (open) { MONEY_FORM = open.dataset.money; render(); const a = $("#mf-amt"); if (a) a.focus(); return; }
+  if (e.target.closest("button[data-money-cancel]")) { MONEY_FORM = null; render(); return; }
+  const save = e.target.closest("button[data-money-save]"); if (!save) return;
+  const side = save.dataset.moneySave, date = $("#mf-date").value, amount = Math.round(Number($("#mf-amt").value) * 100) / 100;
+  const msg = $("#mf-msg");
+  if (!date || date > sydParts().date || !(amount > 0)) { msg.textContent = "Enter a date (not in the future) and an amount above zero."; return; }
+  const bk = book(TRADES, STATE.prices || {});
+  if (side === "WITHDRAW" && amount > bk.cash + 0.5) { msg.textContent = `You only have ${money(bk.cash)} in cash. Record the sale first, then take the money out.`; return; }
+  save.disabled = true;
+  try {
+    await mutateTrades((list) => {
+      const hasFlows = list.some((t) => t.status === "done" && (t.side === "DEPOSIT" || t.side === "WITHDRAW"));
+      const trades = list.filter((t) => t.status === "done" && (t.side === "BUY" || t.side === "SELL"));
+      const add = [];
+      // First money logged: keep your original starting amount as the first deposit, so nothing is lost
+      if (!hasFlows && trades.length) {
+        const first = trades.map((t) => t.date).sort()[0];
+        add.push({ id: newId(), status: "done", side: "DEPOSIT", date: first, amount: CFG.capital > 0 ? Number(CFG.capital) : CAPITAL, note: "Starting amount", recorded: new Date().toISOString() });
+      }
+      add.push({ id: newId(), status: "done", side, date, amount, recorded: new Date().toISOString() });
+      return list.concat(add);
+    });
+    MONEY_FORM = null;
+    if (isReal()) await saveSettings({ recalc: new Date().toISOString() });   // real money: re-size your orders
+    render();
+  } catch (err) { msg.textContent = err.message; save.disabled = false; }
 });
 
 /* ---------- render ---------- */
@@ -686,8 +736,11 @@ function renderOverview(s, bk, ad) {
   const mk = s.market || {}, mine = s.mine || {};
   // your portfolio: engine value (includes distributions) unless you've recorded trades since the last check
   const newest = TRADES.reduce((a, t) => (t.recorded || "") > a ? t.recorded : a, "");
-  const provisional = bk.count && (!mine.has_trades || (s.status && newest > s.status.checked));
-  const yourValue = bk.count ? (provisional ? bk.value : mine.value) : null;
+  // compare real times, not text: the two timestamps can be in different time zones
+  // provisional = you've added or changed records since the engine last processed them
+  const provisional = !!((bk.count || bk.hasFlows) && (!mine.has_trades || mine.records !== TRADES.length ||
+    (s.status && newest && new Date(newest) > new Date(s.status.checked))));
+  const yourValue = bk.count || bk.hasFlows ? (provisional ? bk.value : mine.value) : null;
   const mh = (mine.history || []).filter((p) => !bad(p.R));
   const lastCmp = mh[mh.length - 1];
   let peak = -Infinity, worst = 0; h.forEach((p) => { peak = Math.max(peak, p.B); worst = Math.min(worst, p.B / peak - 1); });
@@ -696,12 +749,16 @@ function renderOverview(s, bk, ad) {
 
   const tile = (k, v, sub, extra = "", text = false) => `<div class="tile ${extra}"><div class="k">${k}</div><div class="v${text ? " text" : ""}">${v}</div><div class="s">${sub}</div></div>`;
   const tiles = [
-    tile(`<span class="swatch" style="background:currentColor"></span>If you followed every recommendation`, money(toAmt(last.B)), `${pct(last.B / START - 1)} since ${esc(dayName(s.started))}`, "lead"),
-    bk.count ? tile(`<span class="swatch" style="background:var(--Y)"></span>Your portfolio`, money(yourValue), provisional ? "Provisional until the next check" : `${pct(yourValue / CAPITAL - 1)} on ${money(CAPITAL)}`)
+    mine.has_trades && mine.rec_value != null && !provisional
+      ? tile(`<span class="swatch" style="background:currentColor"></span>If you followed every recommendation`, money(mine.rec_value), `${signed$(mine.rec_value - mine.contributed)} on the same deposits`, "lead")
+      : tile(`<span class="swatch" style="background:currentColor"></span>If you followed every recommendation`, money(toAmt(last.B)), `${pct(last.B / START - 1)} since ${esc(dayName(s.started))}`, "lead"),
+    bk.count || bk.hasFlows ? tile(`<span class="swatch" style="background:var(--Y)"></span>Your portfolio`, money(yourValue), provisional ? "Provisional until the next check" : `${signed$(yourValue - bk.contributed)} on ${money(bk.contributed)} put in`)
              : tile(`<span class="swatch" style="background:var(--Y)"></span>Your portfolio`, "Not recorded", "Mark orders as done in Orders"),
     tile("You vs following them all", lastCmp ? signed$(lastCmp.Y - lastCmp.R) : "–", lastCmp ? `${pct(lastCmp.Y / lastCmp.R - 1)} since ${esc(dayName(mine.compare_from))}` : "Shown once you record trades"),
     tile("Orders followed", ad.done + ad.skipped ? `${ad.done} of ${ad.done + ad.skipped}` : "–", `${ad.open} waiting${ad.slip != null ? `, prices ${pct(ad.slip, 2)} vs suggested` : ""}`),
-    tile(`<span class="swatch" style="background:var(--M)"></span>Index yardstick`, money(toAmt(last.M)), `${pct(last.M / START - 1)} (40% STW, 40% IVV, 20% VEU)`),
+    mine.has_trades && mine.index_value != null && !provisional
+      ? tile(`<span class="swatch" style="background:var(--M)"></span>Index yardstick`, money(mine.index_value), `${signed$(mine.index_value - mine.contributed)} on the same deposits (40% STW, 40% IVV, 20% VEU)`)
+      : tile(`<span class="swatch" style="background:var(--M)"></span>Index yardstick`, money(toAmt(last.M)), `${pct(last.M / START - 1)} (40% STW, 40% IVV, 20% VEU)`),
     tile("Worst fall so far", pct(worst), "Following every recommendation, peak to low"),
     tile("Next weekly check", esc(nextWeekly(s)), `Rules version ${s.rules_version || 1}`, "", true),
     tile("Held under 12 months", bk.count ? String(shortLots.length) + (shortLots.length === 1 ? " parcel" : " parcels") : "–",
@@ -709,10 +766,12 @@ function renderOverview(s, bk, ad) {
   ].join("");
 
   const cmpChart = mh.length >= 2
-    ? legend([["If you'd followed every recommendation", "var(--navy)"], ["What you actually have", "var(--Y)"]]) + lineChart([
-        { points: mh.map((p) => ({ d: p.d, v: p.R })), color: "var(--navy)", w: 2.6 },
-        { points: mh.map((p) => ({ d: p.d, v: p.Y })), color: "var(--Y)", w: 2.6 }], "Recommended versus your actual portfolio")
-      + `<p class="chart-note">The navy line is what your money would be worth had you placed every recommended order from ${esc(dateLong(mine.compare_from))}, starting from your actual value that day.</p>`
+    ? legend([["What you actually have", "var(--Y)"], ["Every recommendation, same deposits", "var(--navy)"], ["Index yardstick, same deposits", "var(--M)", 1], ["Money put in", "var(--A)", 1]]) + lineChart([
+        { points: mh.map((p) => ({ d: p.d, v: p.C })), color: "var(--A)", dash: "2 4", w: 1.4 },
+        { points: mh.map((p) => ({ d: p.d, v: p.M })), color: "var(--M)", dash: "6 5", w: 1.8 },
+        { points: mh.map((p) => ({ d: p.d, v: p.R })), color: "var(--navy)", w: 2.4 },
+        { points: mh.map((p) => ({ d: p.d, v: p.Y })), color: "var(--Y)", w: 2.8 }], "Your portfolio versus the yardsticks, with the same deposits")
+      + `<p class="chart-note">Each deposit and withdrawal is applied on the same day to the two yardsticks, so all three lines use exactly the same money. Steps in the dotted grey line are your deposits.</p>`
     : `<p class="chart-note">${bk.count ? "This fills in after your trades have been through two checks." : "Record what you actually bought and sold in the Orders tab. This chart then compares your real results with the recommendations."}</p>`;
 
   const stratChart = legend([["Every recommendation", "var(--navy)"], ["Strategy A (dip-buying, paper)", "var(--A)"], ["Index yardstick", "var(--M)", 1]]) + lineChart([
@@ -825,9 +884,9 @@ function renderOrders(s, bk, ad) {
 
   const tickers = (s.universe || (s.rankings || []).map((r) => ({ ticker: r.ticker, theme: r.theme }))).map((u) => `<option value="${esc(u.ticker)}">${esc(u.ticker)} (${esc(u.theme)})</option>`).join("");
   const mine = TRADES.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((t) => `<tr>
-      <td>${esc(dayName(t.date))}</td><td>${t.status === "skipped" ? `<span class="chip skip">Skipped</span>` : `<span class="side ${t.side}">${t.side === "BUY" ? "Buy" : "Sell"}</span>`}</td>
-      <td class="t">${esc(t.ticker)}</td><td class="r">${t.status === "done" ? num(t.units) : ""}</td><td class="r">${t.status === "done" ? money(t.price, 2) : ""}</td>
-      <td class="r">${t.status === "done" ? money(t.units * t.price) : ""}</td><td class="hide-sm">${STATE.universe && !STATE.universe.some((u) => u.ticker === t.ticker) ? `<span class="tag below">Unknown ETF, not counted</span>` : t.order_key ? "From an order" : "Your own"}</td>
+      <td>${esc(dayName(t.date))}</td><td>${t.status === "skipped" ? `<span class="chip skip">Skipped</span>` : t.side === "DEPOSIT" ? `<span class="chip done">Money in</span>` : t.side === "WITHDRAW" ? `<span class="chip skip">Money out</span>` : `<span class="side ${t.side}">${t.side === "BUY" ? "Buy" : "Sell"}</span>`}</td>
+      <td class="t">${t.ticker ? esc(t.ticker) : "Cash"}</td><td class="r">${t.status === "done" && t.units ? num(t.units) : ""}</td><td class="r">${t.status === "done" && t.price ? money(t.price, 2) : ""}</td>
+      <td class="r">${t.status !== "done" ? "" : t.amount ? money(t.amount) : money(t.units * t.price)}</td><td class="hide-sm">${t.amount ? esc(t.note || "") : STATE.universe && !STATE.universe.some((u) => u.ticker === t.ticker) ? `<span class="tag below">Unknown ETF, not counted</span>` : t.order_key ? "From an order" : "Your own"}</td>
       <td><button class="mini" data-act="del" data-id="${esc(t.id)}">Delete</button></td></tr>`).join("");
 
   $("#orders").innerHTML = `${ticket}
@@ -843,7 +902,7 @@ function renderOrders(s, bk, ad) {
         <div><label for="m-units">Units</label><input id="m-units" type="number" step="any" min="0"></div>
         <div><label for="m-price">Price per unit</label><input id="m-price" type="number" step="any" min="0"></div>
       </div><div class="row" style="margin-top:12px"><button class="btn" data-act="manual">Save trade</button></div><div class="msg" id="m-msg" role="status"></div></div></section>
-    <section><h2>Your trade record</h2><p class="sub">${bk.count} trade${bk.count === 1 ? "" : "s"} recorded. Cash starts at your investment amount of ${money(CAPITAL)}, minus purchases, plus sales.</p>
+    <section><h2>Your trade record</h2><p class="sub">${bk.count} trade${bk.count === 1 ? "" : "s"} recorded. Your cash is the money you've put in (${money(bk.contributed)}), minus purchases, plus sales. Add money from the Overview.</p>
       <div class="panel scroll"><table><thead><tr><th>Date</th><th>Side</th><th>ETF</th><th class="r">Units</th><th class="r">Price</th><th class="r">Value</th><th class="hide-sm">Source</th><th></th></tr></thead>
       <tbody>${mine || `<tr><td colspan="8">Nothing recorded yet.</td></tr>`}</tbody></table></div></section>`;
 }
