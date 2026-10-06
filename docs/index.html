@@ -838,6 +838,121 @@ document.addEventListener("click", async (e) => {
   } catch (err) { bad(err.message); }
 });
 
+/* ---------- Invest now: split new money across Strategy B's current picks, in whole units ---------- */
+let INVEST = { open: false, amount: "", whole: true, newMoney: true, plan: null };
+function investPlan(s, bk, amount, whole) {
+  const prices = s.prices || {};
+  const rk = Object.fromEntries((s.rankings || []).map((r) => [r.ticker, r]));
+  const picks = ((s.B.view && s.B.view.holdings) || []).filter((h) => h.ticker !== "AAA");
+  const skipped = [], use = [];
+  for (const h of picks) {
+    const r = rk[h.ticker];
+    if (!prices[h.ticker]) skipped.push({ k: h.ticker, why: "no current price" });
+    else if (r && !r.in_trend) skipped.push({ k: h.ticker, why: "too close to its trend line for new money" });
+    else use.push(h);
+  }
+  if (!use.length) return { lines: [], skipped, leftover: amount };
+  const wsum = use.reduce((a, h) => a + h.weight, 0);
+  // what you already hold of each pick (your recorded strategy trades)
+  const have = Object.fromEntries(bk.holdings.map((h) => [h.ticker, h.units * (prices[h.ticker] || 0)]));
+  const heldTotal = use.reduce((a, h) => a + (have[h.ticker] || 0), 0);
+  const total = heldTotal + amount;
+  let gaps = use.map((h) => ({ k: h.ticker, p: prices[h.ticker], target: (h.weight / wsum) * total, gap: Math.max(0, (h.weight / wsum) * total - (have[h.ticker] || 0)) }));
+  const gsum = gaps.reduce((a, g) => a + g.gap, 0) || 1;
+  gaps = gaps.map((g) => ({ ...g, alloc: amount * g.gap / gsum }));
+  let lines;
+  if (!whole) lines = gaps.map((g) => ({ k: g.k, p: g.p, units: Math.floor(g.alloc / g.p * 100) / 100 }));
+  else {
+    lines = gaps.map((g) => ({ k: g.k, p: g.p, units: Math.floor(g.alloc / g.p), alloc: g.alloc }));
+    let left = amount - lines.reduce((a, l) => a + l.units * l.p, 0);
+    // spend what's left one unit at a time, on the pick still furthest below its share
+    // (never on a pick you already hold enough of)
+    for (let guard = 0; guard < 500; guard++) {
+      const can = lines.filter((l) => l.alloc > 0.005 && l.p <= left + 1e-9 && l.alloc - l.units * l.p > 0);
+      if (!can.length) break;
+      can.sort((a, b) => (b.alloc - b.units * b.p) - (a.alloc - a.units * a.p));
+      can[0].units += 1; left -= can[0].p;
+    }
+    // every pick has reached its share: keep investing in whichever overshoots its share the least
+    for (let guard = 0; guard < 500; guard++) {
+      const can = lines.filter((l) => l.alloc > 0.005 && l.p <= left + 1e-9);
+      if (!can.length) break;
+      can.sort((a, b) => ((a.units + 1) * a.p - a.alloc) / a.alloc - ((b.units + 1) * b.p - b.alloc) / b.alloc);
+      can[0].units += 1; left -= can[0].p;
+    }
+    for (const l of lines) if (l.units === 0 && l.alloc >= 1) skipped.push({ k: l.k, why: `one unit costs ${money(l.p, 2)}, more than its ${money(l.alloc)} share` });
+  }
+  for (const g of gaps) if (g.gap === 0 && (have[g.k] || 0) > 0) skipped.push({ k: g.k, why: "you already hold more than its share" });
+  lines = lines.filter((l) => l.units > 0).map((l) => ({ ...l, cost: Math.round(l.units * l.p * 100) / 100 }));
+  const spent = lines.reduce((a, l) => a + l.cost, 0);
+  return { lines, skipped, leftover: Math.round((amount - spent) * 100) / 100, spent };
+}
+function investCard(s, bk) {
+  if (!INVEST.open) return `<div class="row" style="margin-bottom:16px"><button class="btn" data-inv="open" style="flex:1">Invest now: split new money across today's picks</button></div>`;
+  const plan = INVEST.plan;
+  const rows = plan && plan.lines.length ? plan.lines.map((l, i) => `<tr><td><div class="t">${etf(l.k)}</div></td>
+      <td class="r"><input type="number" step="any" min="0" data-inv-u="${i}" value="${l.units}" style="width:4.2em;padding:6px;text-align:right"></td>
+      <td class="r"><input type="number" step="any" min="0" data-inv-p="${i}" value="${l.p}" style="width:5em;padding:6px;text-align:right"></td>
+      <td class="r">${money(l.cost, 2)}</td></tr>`).join("") : "";
+  return `<section class="panel" style="margin-bottom:16px"><h3>Invest now</h3>
+    <p class="sub" style="margin-bottom:10px">Splits your money across what Strategy B holds today, in line with its weights, and favours the picks you're short of. It isn't a prediction: it follows the strategy's rules.</p>
+    <div class="fields" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+      <div><label for="inv-amt">Amount (A$)</label><input id="inv-amt" type="number" step="any" min="0" inputmode="decimal" value="${esc(INVEST.amount)}"></div>
+      <div style="display:flex;flex-direction:column;gap:6px;justify-content:flex-end">
+        <label style="display:flex;gap:8px;align-items:center;font-weight:500;margin:0"><input type="checkbox" id="inv-whole" ${INVEST.whole ? "checked" : ""}> Whole units only</label>
+        <label style="display:flex;gap:8px;align-items:center;font-weight:500;margin:0"><input type="checkbox" id="inv-new" ${INVEST.newMoney ? "checked" : ""}> This is new money</label></div></div>
+    <div class="row" style="margin-top:10px"><button class="btn" data-inv="calc">Work it out</button><button class="btn ghost" data-inv="close">Close</button></div>
+    ${plan ? (plan.lines.length ? `<div class="scroll" style="margin-top:12px"><table><thead><tr><th>Buy</th><th class="r">Units</th><th class="r">Price</th><th class="r">Cost</th></tr></thead>
+      <tbody>${rows}<tr><td><b>Total</b></td><td></td><td></td><td class="r"><b>${money(plan.spent, 2)}</b></td></tr></tbody></table></div>
+      <p class="note">${plan.leftover > 0 ? `${money(plan.leftover, 2)} left over${INVEST.whole ? ", not enough for another whole unit" : ""}. ` : ""}Prices are about 20 minutes old. Use limit orders at or near these prices in Betashares, then change the units and prices above to what you actually paid before recording.</p>
+      <div class="row"><button class="btn" data-inv="record">Record these purchases</button></div>`
+      : `<p class="note" style="margin-top:12px">Nothing to suggest right now.</p>`) +
+      (plan.skipped.length ? `<p class="note">Left out: ${plan.skipped.map((x) => `${esc(x.k)} (${esc(x.why)})`).join("; ")}.</p>` : "") : ""}
+    <div class="msg" id="inv-msg" role="status"></div></section>`;
+}
+document.addEventListener("input", (e) => {
+  const u = e.target.dataset && (e.target.dataset.invU ?? e.target.dataset.invP);
+  if (u === undefined || !INVEST.plan) return;
+  const i = +u, l = INVEST.plan.lines[i];
+  if (e.target.dataset.invU !== undefined) l.units = Number(e.target.value) || 0; else l.p = Number(e.target.value) || 0;
+  l.cost = Math.round(l.units * l.p * 100) / 100;
+});
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-inv]"); if (!b) return;
+  const act = b.dataset.inv; const msg = (t, ok) => { const m = $("#inv-msg"); if (m) { m.className = "msg " + (ok ? "ok" : "bad"); m.textContent = t; } };
+  if (act === "open") { INVEST.open = true; INVEST.plan = null; render(); const a = $("#inv-amt"); if (a) a.focus(); return; }
+  if (act === "close") { INVEST = { ...INVEST, open: false, plan: null }; render(); return; }
+  if (act === "calc") {
+    const amount = Number($("#inv-amt").value);
+    INVEST.amount = $("#inv-amt").value; INVEST.whole = $("#inv-whole").checked; INVEST.newMoney = $("#inv-new").checked;
+    if (!(amount > 0)) return msg("Enter an amount above zero.");
+    INVEST.plan = investPlan(STATE, book(TRADES, STATE.prices || {}), amount, INVEST.whole);
+    render(); return;
+  }
+  if (act === "record") {
+    const lines = (INVEST.plan.lines || []).filter((l) => l.units > 0 && l.p > 0);
+    if (!lines.length) return msg("Nothing to record.");
+    const today = sydParts().date, now = new Date().toISOString();
+    const spent = Math.round(lines.reduce((a, l) => a + l.units * l.p, 0) * 100) / 100;
+    b.disabled = true;
+    try {
+      await mutateTrades((list) => {
+        const add = [];
+        if (INVEST.newMoney) {
+          const hasFlows = list.some((t) => t.status === "done" && (t.side === "DEPOSIT" || t.side === "WITHDRAW"));
+          const trades = list.filter((t) => t.status === "done" && (t.side === "BUY" || t.side === "SELL"));
+          if (!hasFlows && trades.length) add.push({ id: newId(), status: "done", side: "DEPOSIT", date: trades.map((t) => t.date).sort()[0], amount: CFG.capital > 0 ? Number(CFG.capital) : CAPITAL, note: "Starting amount", recorded: now });
+          add.push({ id: newId(), status: "done", side: "DEPOSIT", date: today, amount: Number(INVEST.amount) || spent, note: "Invest now", recorded: now });
+        }
+        for (const l of lines) add.push({ id: newId(), status: "done", side: "BUY", date: today, ticker: l.k, units: l.units, price: l.p, order_key: null, recorded: now, note: "Invest now" });
+        return list.concat(add);
+      });
+      INVEST = { open: false, amount: "", whole: INVEST.whole, newMoney: true, plan: null };
+      render();
+    } catch (err) { msg(err.message); b.disabled = false; }
+  }
+});
+
 /* ---------- render ---------- */
 const REGIME = {
   bull: ["Uptrend", "The ASX 200 is above its 200-day average and rising. Strategy B can hold up to 5 ETFs."],
@@ -939,6 +1054,7 @@ function renderOverview(s, bk, ad) {
       </div>
     </section>
     ${modeBar()}
+    ${investCard(s, bk)}
     ${positionsCard(s, bk)}
     ${coreCard(s, false)}
     <div class="tiles">${tiles}</div>
