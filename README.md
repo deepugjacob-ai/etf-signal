@@ -115,6 +115,10 @@ In **Orders**, tap **I did this** after you trade in Betashares and enter your a
 
 The engine values your trades the same way as the paper portfolio (dividends included), and the **Overview** compares them: your value against what the same money would be worth had it followed Strategy B exactly. **Holdings** shows each parcel's tax status: short-term until it has been held 12 months.
 
+## Adding money over time
+
+On the Overview, under **Your holdings**, tap **Add money** whenever you move money into Betashares for this strategy (or **Take money out**), with the date. Your gain is then measured against what you've actually put in, and the two yardsticks ("every recommendation" and the index mix) get the same deposits on the same days, so the comparison stays fair however often you add money. The first time you add money, your original starting amount is kept as the first deposit.
+
 ## Real-money mode
 
 In **Settings** → **Trading mode**, choose **Real money**. Set **Investment amount** to the cash you've put aside for this strategy.
@@ -123,6 +127,26 @@ In **Settings** → **Trading mode**, choose **Real money**. Set **Investment am
 - Your Friday alert becomes those orders. The $10,000 paper portfolio keeps running as the yardstick.
 - Record every trade with **I did this** (actual units and price), or the next orders will be wrong. If you add money, raise the investment amount and recalculate.
 - Leftover cash of $100 or more is parked in AAA, as the strategy does. Purchases you can't fully fund are scaled down together.
+
+## Reliable updates (recommended)
+
+GitHub's built-in timer often delays or skips runs, sometimes running only a couple of times a day. Two fixes, both using one fine-grained token:
+
+**Create the token.** GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token. Repository access: **Only select repositories** → `etf-signal`. Permissions → Repository permissions → **Actions: Read and write**. Generate and copy it.
+
+**1. An outside timer (cron-job.org, free).** Create a cron job with:
+- URL: `https://api.github.com/repos/YOUR-USERNAME/etf-signal/actions/workflows/engine.yml/dispatches`
+- Schedule: every 20 minutes, 10:00 to 16:20, Monday to Friday, time zone Australia/Sydney
+- Method **POST**, headers `Authorization: Bearer YOUR-TOKEN`, `Accept: application/vnd.github+json`, `Content-Type: application/json`
+- Body: `{"ref":"main","inputs":{"mode":"scheduled"}}`
+
+A test run should return status 204. GitHub's own timer stays on as a backup; overlapping runs are harmless.
+
+**2. Update now in the dashboard.** In Settings → **Live updates**, paste the same token and `YOUR-USERNAME/etf-signal`. During ASX hours, Refresh then asks for fresh prices and waits about a minute for them.
+
+## ETF price charts
+
+Tap any underlined ETF name (in Orders, Holdings or Rankings) to see its price over 1, 3, 6 or 12 months, with the 200-day trend line, the buy line (+1%) and sell line (−2%), your average cost if you hold it, and today's 20-minute snapshots.
 
 ## Known limitations
 
