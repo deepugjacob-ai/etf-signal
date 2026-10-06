@@ -376,6 +376,7 @@ async function load() {
     syncModeUI();
     $("#capital").value = String(CAPITAL);
     TRADES = (await readJson(g.files, "mytrades.json")) || [];
+    CORE_REC = (await readJson(g.files, "core.json")) || { lots: [] };
     try { CHARTS = await readJson(g.files, "charts.json"); } catch (e) { CHARTS = null; }
     STATE = s;
     const dep = (TRADES || []).filter((t) => t.status === "done" && (t.side === "DEPOSIT" || t.side === "WITHDRAW") && t.amount > 0);
@@ -467,7 +468,8 @@ function priceChart(k, range) {
     { points: pts(close), color: "var(--navy)", w: 2.6 },
   ];
   if (h && h.units > 0) series.unshift({ points: d.map((x) => ({ d: x, v: h.cost / h.units })), color: "var(--Y)", dash: "1 3", w: 1.6 });
-  const items = [["Price", "var(--navy)"], ["200-day trend", "var(--M)"], ["Buy line (+1%)", "var(--buy)", 1], ["Sell line (−2%)", "var(--sell)", 1]];
+  const hasTrend = trend.some((v) => v != null);
+  const items = hasTrend ? [["Price", "var(--navy)"], ["200-day trend", "var(--M)"], ["Buy line (+1%)", "var(--buy)", 1], ["Sell line (−2%)", "var(--sell)", 1]] : [["Price", "var(--navy)"]];
   if (h && h.units > 0) items.push(["Your average cost", "var(--Y)", 1]);
   return legend(items) + lineChart(series, `${k} price over ${n} trading days`, dayName, (v) => money(v, 2));
 }
@@ -485,7 +487,8 @@ function renderSheet() {
   const vsTrend = t ? now / t - 1 : null;
   const rk = (STATE.rankings || []).find((r) => r.ticker === k);
   const heldB = (STATE.B.view && STATE.B.view.holdings || []).some((x) => x.ticker === k);
-  const status = vsTrend == null ? "Not enough history" : vsTrend > 0.01 ? "Above the buy line" : vsTrend > -0.02 ? "Between the lines: can be held, not bought" : "Below the sell line";
+  const inStrategy = (STATE.universe || []).some((x) => x.ticker === k);
+  const status = !inStrategy ? "Not one of the strategy's ETFs, so there are no trend lines" : vsTrend == null ? "Not enough history" : vsTrend > 0.01 ? "Above the buy line" : vsTrend > -0.02 ? "Between the lines: can be held, not bought" : "Below the sell line";
   const ranges = [[21, "1M"], [63, "3M"], [126, "6M"], [252, "1Y"]];
   const myH = book(TRADES, STATE.prices || {}).holdings.find((x) => x.ticker === k);
   const intraSeries = [{ points: intra.map(([tm, v]) => ({ d: tm, v })), color: "var(--navy)", w: 2.2 }];
@@ -693,6 +696,148 @@ document.addEventListener("click", async (e) => {
   } catch (err) { msg.textContent = err.message; save.disabled = false; }
 });
 
+/* ---------- long-term core holdings (separate from the strategy) ---------- */
+let CORE_REC = { lots: [] };
+let CORE_FORM = null;   // "buy" | "fix" | "hgp" | null
+async function mutateCore(fn) {
+  const g = await gh(gistPath());
+  let cur = (await readJson(g.files, "core.json")) || { lots: [] };
+  cur = fn(cur);
+  cur.updated = new Date().toISOString();
+  await gh(gistPath(), { method: "PATCH", body: JSON.stringify({ files: { "core.json": { content: JSON.stringify(cur) } } }) });
+  CORE_REC = cur; render();
+}
+const coreGroups = () => [...new Set((CORE_REC.lots || []).map((l) => l.group || "Core"))];
+function coreCard(s, detailed) {
+  const c = s.core || {};
+  const pending = CORE_REC.updated && (!s.status || new Date(CORE_REC.updated) > new Date(s.status.checked));
+  const controls = detailed ? coreControls() : "";
+  if (!c.has_core) {
+    if (!detailed && !(CORE_REC.lots || []).length) return "";
+    return `<section class="panel" style="margin-bottom:16px"><h3>Long-term core</h3><p class="note" style="margin:0 0 10px">${(CORE_REC.lots || []).length ? "Saved. Values appear after the next check (within 15 minutes in ASX hours, or run check now in GitHub Actions)." : "Your investments outside the strategy, tracked separately so they don't affect the strategy comparison. Import the file I gave you, or add holdings below."}</p>${controls}</section>`;
+  }
+  const groupBlock = (g) => {
+    const rows = g.positions.map((p) => `<tr><td><div class="t">${etf(p.ticker)}</div><div class="th">${num(p.units)} units${p.estimated ? ", estimated" : ""}</div></td>
+      <td class="r">${money(p.value)}<div class="th">at ${money(p.price, 2)}</div></td>
+      <td class="r ${cls(p.gain)}">${p.gain == null ? "–" : signed$(p.gain)}<div class="th">${p.gain == null ? "cost unknown" : pct(p.cost ? p.gain / p.cost : null)}</div></td>
+      <td class="r ${cls(p.day)}">${signed$(p.day)}</td></tr>`).join("");
+    return `<h3 style="margin:14px 0 6px">${esc(g.name)}</h3>
+      <div class="scroll"><table><thead><tr><th>ETF</th><th class="r">Value</th><th class="r">Gain</th><th class="r">Latest day</th></tr></thead>
+      <tbody>${rows}<tr><td><b>Total</b></td><td class="r"><b>${money(g.value)}</b></td><td class="r ${cls(g.gain)}"><b>${g.gain == null ? "–" : signed$(g.gain)}</b></td><td class="r ${cls(g.day)}"><b>${signed$(g.day)}</b></td></tr></tbody></table></div>`;
+  };
+  const summary = c.groups.map((g) => `<li><div><b>${esc(g.name)}</b><div class="sub2">${g.positions.length} ETF${g.positions.length === 1 ? "" : "s"}</div></div>
+      <div><div class="val">${money(g.value)}</div><div class="chg ${cls(g.gain)}">${g.gain == null ? "" : signed$(g.gain) + " (" + pct(g.cost ? g.gain / g.cost : null) + ") gain"}</div>
+      <div class="chg ${cls(g.day)}">${signed$(g.day)} latest day</div></div></li>`).join("");
+  const est = c.groups.some((g) => g.positions.some((p) => p.estimated));
+  const hist = c.history || [];
+  const chart = detailed && hist.length >= 2 ? legend([["Value", "var(--Y)"], ["Cost", "var(--A)", 1]]) + lineChart([
+      { points: hist.map((h) => ({ d: h.d, v: h.C })), color: "var(--A)", dash: "2 4", w: 1.4 },
+      { points: hist.map((h) => ({ d: h.d, v: h.V })), color: "var(--Y)", w: 2.6 }], "Core holdings value over time") : "";
+  return `<section class="panel" style="margin-bottom:16px"><h3>Long-term core <span class="note" style="font-weight:400">(separate from the strategy)</span></h3>
+    <div class="postotal" style="border-top:0;padding-top:0;margin-top:0"><span>Worth <b>${money(c.value)}</b></span>
+      ${c.gain != null ? `<span>Gain <b class="${cls(c.gain)}">${signed$(c.gain)} (${pct(c.cost ? c.gain / c.cost : null)})</b></span>` : ""}
+      <span>Latest day <b class="${cls(c.day)}">${signed$(c.day)}</b></span></div>
+    ${detailed ? c.groups.map(groupBlock).join("") + chart : `<ul class="positions" style="margin-top:8px">${summary}</ul>`}
+    ${c.missing && c.missing.length ? `<p class="note" style="color:var(--sell)">No prices found for ${c.missing.map(esc).join(", ")}. Check the ticker.</p>` : ""}
+    ${est ? `<p class="chart-note">Units and costs marked “estimated” came from your Betashares screen and statement. Correct them ${detailed ? "below" : "in Holdings"} with the exact figures from the Betashares app.</p>` : ""}
+    ${pending ? `<p class="chart-note">You've made changes: figures update at the next check.</p>` : ""}
+    ${detailed ? controls : `<p class="chart-note">Details and editing are in Holdings.</p>`}</section>`;
+}
+function coreControls() {
+  const groups = coreGroups(); const f = CORE_FORM;
+  const gOpts = (sel) => [...new Set([...groups, "Your own ETFs"])].map((g) => `<option${g === sel ? " selected" : ""}>${esc(g)}</option>`).join("");
+  const tick = [...new Set((CORE_REC.lots || []).map((l) => (l.group || "Core") + "|" + l.ticker))].sort();
+  const managed = groups.filter((g) => /managed|portfolio/i.test(g));
+  let form = "";
+  if (f === "buy") form = `<div class="fields" style="margin-top:10px">
+      <div><label for="cb-g">Group</label><select id="cb-g">${gOpts("Your own ETFs")}</select></div>
+      <div><label for="cb-t">ETF code</label><input id="cb-t" type="text" autocapitalize="characters" placeholder="e.g. DHHF"></div>
+      <div><label for="cb-d">Date</label><input id="cb-d" type="date" value="${sydParts().date}" max="${sydParts().date}"></div>
+      <div><label for="cb-u">Units</label><input id="cb-u" type="number" step="any" min="0"></div>
+      <div><label for="cb-p">Price per unit</label><input id="cb-p" type="number" step="any" min="0"></div></div>
+      <div class="row" style="margin-top:10px"><button class="btn" data-core="save-buy">Save purchase</button><button class="btn ghost" data-core="cancel">Cancel</button></div>
+      <p class="note">For auto-invest and any other buys, including reinvested distributions.</p>`;
+  if (f === "fix") form = `<div class="fields" style="margin-top:10px">
+      <div><label for="cf-k">Holding</label><select id="cf-k">${tick.map((x) => `<option value="${esc(x)}">${esc(x.split("|")[1])} (${esc(x.split("|")[0])})</option>`).join("")}</select></div>
+      <div><label for="cf-u">Correct units</label><input id="cf-u" type="number" step="any" min="0"></div>
+      <div><label for="cf-c">Total cost (optional)</label><input id="cf-c" type="number" step="any" min="0" placeholder="what you paid in total"></div></div>
+      <div class="row" style="margin-top:10px"><button class="btn" data-core="save-fix">Save correction</button><button class="btn" data-core="remove" style="background:var(--sell)">Remove holding</button><button class="btn ghost" data-core="cancel">Cancel</button></div>
+      <p class="note">Copy the exact units (and cost, if shown) from the Betashares app. This replaces the estimate for that ETF.</p>`;
+  if (f === "hgp") form = `<div class="fields" style="margin-top:10px">
+      <div><label for="ch-g">Portfolio</label><select id="ch-g">${managed.map((g) => `<option>${esc(g)}</option>`).join("")}</select></div>
+      <div><label for="ch-v">Value now in the app</label><input id="ch-v" type="number" step="any" min="0"></div>
+      <div><label for="ch-a">Money added since last update</label><input id="ch-a" type="number" step="any" min="0" value="0"></div></div>
+      <div class="row" style="margin-top:10px"><button class="btn" data-core="save-hgp">Update value</button><button class="btn ghost" data-core="cancel">Cancel</button></div>
+      <p class="note">The managed portfolio's mix is tracked automatically between updates. Update it whenever you check the app; money you added counts as extra cost, not gain.</p>`;
+  return `<div class="row" style="margin-top:12px">
+      <button class="mini primary" data-core="open-buy">Record a purchase</button>
+      ${tick.length ? `<button class="mini" data-core="open-fix">Correct a holding</button>` : ""}
+      ${managed.length ? `<button class="mini" data-core="open-hgp">Update managed portfolio</button>` : ""}
+      <label class="mini" style="display:inline-flex;align-items:center;margin:0;cursor:pointer">Import file<input type="file" id="core-file" hidden></label></div>
+    ${form}<div class="msg" id="core-msg" role="status"></div>`;
+}
+document.addEventListener("change", async (e) => {
+  if (e.target.id !== "core-file" || !e.target.files.length) return;
+  const m = $("#core-msg");
+  try {
+    const data = JSON.parse(await e.target.files[0].text());
+    const lots = (data.lots || []).filter((l) => l.ticker && l.units > 0);
+    if (!lots.length) throw new Error("That file has no holdings in it.");
+    if (!confirm(`Import ${lots.length} holdings? This replaces your current core holdings list.`)) return;
+    await mutateCore(() => ({ ...data, lots, imported: new Date().toISOString() }));
+    const x = $("#core-msg"); if (x) { x.className = "msg ok"; x.textContent = `Imported ${lots.length} holdings. Values appear after the next check (or run check now in GitHub Actions).`; }
+  } catch (err) { const x = $("#core-msg") || m; x.className = "msg bad"; x.textContent = "Couldn't import: " + err.message; }
+  e.target.value = "";
+});
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-core]"); if (!b) return;
+  const act = b.dataset.core; const m = () => $("#core-msg");
+  const bad = (t) => { const x = m(); if (x) { x.className = "msg bad"; x.textContent = t; } };
+  if (act.startsWith("open-")) { CORE_FORM = act.slice(5); render(); return; }
+  if (act === "cancel") { CORE_FORM = null; render(); return; }
+  try {
+    if (act === "save-buy") {
+      const group = $("#cb-g").value, ticker = $("#cb-t").value.trim().toUpperCase(), date = $("#cb-d").value;
+      const units = Number($("#cb-u").value), price = Number($("#cb-p").value);
+      if (!/^[A-Z0-9]{2,6}$/.test(ticker)) return bad("Enter the ETF's ASX code, for example DHHF.");
+      if (!date || date > sydParts().date || !(units > 0) || !(price > 0)) return bad("Enter a date (not in the future), units and price above zero.");
+      await mutateCore((c) => ({ ...c, lots: [...(c.lots || []), { id: newId(), group, ticker, units, cost: Math.round(units * price * 100) / 100, date, note: "Recorded by you" }] }));
+    } else if (act === "save-fix" || act === "remove") {
+      const [group, ticker] = $("#cf-k").value.split("|");
+      if (act === "remove") {
+        if (!confirm(`Remove ${ticker} from ${group}?`)) return;
+        await mutateCore((c) => ({ ...c, lots: (c.lots || []).filter((l) => !((l.group || "Core") === group && l.ticker === ticker)) }));
+      } else {
+        const units = Number($("#cf-u").value), costRaw = $("#cf-c").value.trim();
+        if (!(units > 0)) return bad("Enter the correct number of units.");
+        const cost = costRaw === "" ? null : Number(costRaw);
+        if (cost != null && !(cost >= 0)) return bad("Cost must be a number.");
+        await mutateCore((c) => {
+          const mine = (c.lots || []).filter((l) => (l.group || "Core") === group && l.ticker === ticker);
+          const first = mine.map((l) => l.date).filter(Boolean).sort()[0] || sydParts().date;
+          const keptCost = cost != null ? cost : (mine.every((l) => l.cost != null) ? mine.reduce((a, l) => a + Number(l.cost), 0) : null);
+          return { ...c, lots: (c.lots || []).filter((l) => !mine.includes(l)).concat([{ id: newId(), group, ticker, units, cost: keptCost, date: first, note: "Corrected by you" }]) };
+        });
+      }
+    } else if (act === "save-hgp") {
+      const group = $("#ch-g").value, target = Number($("#ch-v").value), added = Number($("#ch-a").value || 0);
+      if (!(target > 0) || !(added >= 0)) return bad("Enter the portfolio's value now, and any money added (or 0).");
+      const prices = STATE.prices || {};
+      const lots = (CORE_REC.lots || []).filter((l) => (l.group || "Core") === group);
+      const missing = lots.filter((l) => !prices[l.ticker]).map((l) => l.ticker);
+      if (missing.length) return bad(`No current price yet for ${missing.join(", ")}. Try again after the next check.`);
+      const cur = lots.reduce((a, l) => a + l.units * prices[l.ticker], 0);
+      const f = target / cur;
+      await mutateCore((c) => ({ ...c, lots: (c.lots || []).map((l) => (l.group || "Core") !== group ? l : {
+        ...l, units: Math.round(l.units * f * 1e4) / 1e4,
+        cost: l.cost == null ? null : Math.round((Number(l.cost) + added * (l.units * prices[l.ticker]) / cur) * 100) / 100,
+        note: `Value updated to ${money(target)} on ${sydParts().date}` }) }));
+    } else return;
+    CORE_FORM = null; render();
+    const x = m(); if (x) { x.className = "msg ok"; x.textContent = "Saved. Figures update at the next check (within 15 minutes in ASX hours)."; }
+  } catch (err) { bad(err.message); }
+});
+
 /* ---------- render ---------- */
 const REGIME = {
   bull: ["Uptrend", "The ASX 200 is above its 200-day average and rising. Strategy B can hold up to 5 ETFs."],
@@ -795,6 +940,7 @@ function renderOverview(s, bk, ad) {
     </section>
     ${modeBar()}
     ${positionsCard(s, bk)}
+    ${coreCard(s, false)}
     <div class="tiles">${tiles}</div>
     <div class="grid2">
       <section class="panel"><h3>You vs following every recommendation</h3>${cmpChart}</section>
@@ -994,7 +1140,8 @@ function renderHoldings(s, bk) {
     .map((t) => `<tr><td>${esc(dayName(t.date))}</td><td>${t.st}</td><td><span class="side ${t.side}">${t.side === "BUY" ? "Buy" : "Sell"}</span></td><td class="t">${esc(t.ticker)}</td><td class="r">${money(toAmt(t.value))}</td></tr>`).join("");
 
   $("#holdings").innerHTML = `
-    <section><h2>Your holdings</h2><p class="sub">From your trade record, valued at the latest prices. Short-term parcels have been held under 12 months: a gain on selling them is taxed in full, without the 50% capital gains discount.</p>
+    ${coreCard(s, true)}
+    <section><h2>Your strategy holdings</h2><p class="sub">From your trade record, valued at the latest prices. Short-term parcels have been held under 12 months: a gain on selling them is taxed in full, without the 50% capital gains discount.</p>
       <div class="panel scroll"><table><thead><tr><th>ETF and tax status</th><th class="r hide-sm">Units</th><th class="r">Value</th><th class="r">Gain</th></tr></thead>
       <tbody>${your || `<tr><td colspan="4">Nothing recorded yet. Use “I did this” on an order.</td></tr>`}${bk.count ? `<tr><td><div class="t">Cash</div></td><td class="hide-sm"></td><td class="r">${money(bk.cash)}</td><td></td></tr>` : ""}</tbody></table></div></section>
     ${real ? `<section><h2>Your realised gains</h2><div class="panel scroll"><table><thead><tr><th>Sold</th><th>ETF</th><th class="r">Gain</th><th class="r">Held</th><th>Tax</th></tr></thead><tbody>${real}</tbody></table></div></section>` : ""}
