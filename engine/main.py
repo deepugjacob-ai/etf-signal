@@ -268,6 +268,15 @@ def main(argv=None):
         capital = C.START_CAPITAL
     if not 500 <= capital <= 5_000_000:
         capital = C.START_CAPITAL
+    # If you've logged deposits, your amount is what you've actually put in (deposits minus withdrawals)
+    flows = [x for x in mytrades if x.get("status") == "done" and x.get("side") in ("DEPOSIT", "WITHDRAW")]
+    if flows:
+        try:
+            net = sum(float(x.get("amount") or 0) * (1 if x["side"] == "DEPOSIT" else -1) for x in flows)
+            if net > 0:
+                capital = net
+        except (TypeError, ValueError):
+            pass
     scale = capital / C.START_CAPITAL
     claim = os.environ.get("VAPID_SUB") or "https://github.com"
 
