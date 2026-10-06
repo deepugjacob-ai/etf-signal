@@ -162,6 +162,17 @@ input[type=text],input[type=password],input[type=number],input[type=date],select
 .msg.ok{color:var(--buy)} .msg.bad{color:var(--sell)}
 .note{font-size:.88rem;color:var(--muted)}
 [hidden]{display:none!important}
+.modebar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 14px;margin-bottom:16px}
+.modebar .seg{margin:0}
+.modebar .what{font-size:.86rem;color:var(--muted);flex:1 1 220px}
+.positions{list-style:none;margin:0;padding:0}
+.positions li{border-top:1px solid var(--line);padding:12px 0;display:grid;grid-template-columns:1fr auto;gap:2px 12px}
+.positions li:first-child{border-top:0;padding-top:4px}
+.positions .val{font-weight:800;font-size:1.15rem;text-align:right}
+.positions .sub2{font-size:.86rem;color:var(--muted)}
+.positions .chg{font-size:.86rem;text-align:right;white-space:nowrap}
+.postotal{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:.88rem;color:var(--muted);border-top:1px solid var(--line);padding-top:10px;margin-top:4px}
+.postotal b{color:var(--ink)}
 button.etf{all:unset;cursor:pointer;font-weight:700;border-bottom:1.5px dotted var(--muted)}
 button.etf:focus-visible{outline:3px solid var(--navy);outline-offset:2px;border-radius:4px}
 .sheet-bg{position:fixed;inset:0;background:rgba(10,15,22,.45);z-index:50;display:flex;align-items:flex-end;justify-content:center}
@@ -470,7 +481,10 @@ function renderSheet() {
   const heldB = (STATE.B.view && STATE.B.view.holdings || []).some((x) => x.ticker === k);
   const status = vsTrend == null ? "Not enough history" : vsTrend > 0.01 ? "Above the buy line" : vsTrend > -0.02 ? "Between the lines: can be held, not bought" : "Below the sell line";
   const ranges = [[21, "1M"], [63, "3M"], [126, "6M"], [252, "1Y"]];
-  const intraChart = intra.length >= 2 ? `<h3 style="margin-top:16px">Today</h3>${lineChart([{ points: intra.map(([tm, v]) => ({ d: tm, v })), color: "var(--navy)", w: 2.2 }], `${k} prices today`, (x) => x, (v) => money(v, 2))}<p class="chart-note">Snapshots from each check today, about 20 minutes delayed.</p>` : "";
+  const myH = book(TRADES, STATE.prices || {}).holdings.find((x) => x.ticker === k);
+  const intraSeries = [{ points: intra.map(([tm, v]) => ({ d: tm, v })), color: "var(--navy)", w: 2.2 }];
+  if (myH) intraSeries.unshift({ points: intra.map(([tm]) => ({ d: tm, v: myH.cost / myH.units })), color: "var(--Y)", dash: "1 3", w: 1.6 });
+  const intraChart = intra.length >= 2 ? `<h3 style="margin-top:16px">Today</h3>${myH ? legend([["Price", "var(--navy)"], ["Your average cost", "var(--Y)", 1]]) : ""}${lineChart(intraSeries, `${k} prices today`, (x) => x, (v) => money(v, 2))}<p class="chart-note">Snapshots from each check today, about 20 minutes delayed.</p>` : "";
   let bg = document.querySelector(".sheet-bg");
   if (!bg) { bg = document.createElement("div"); bg.className = "sheet-bg"; document.body.appendChild(bg); bg.addEventListener("click", (e) => { if (e.target === bg) closeSheet(); }); }
   bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
@@ -479,6 +493,10 @@ function renderSheet() {
     <div style="margin-top:10px"><span class="big">${money(now, 2)}</span> ${prevClose ? `<span class="${cls(now - prevClose)}">${pct(now / prevClose - 1, 2)}</span>` : ""}
       <div class="note">${intra.length ? "Delayed ~20 min, " + esc(intra[intra.length - 1][0]) + " today" : "Last close " + esc(dayName(CHARTS.dates[CHARTS.dates.length - 1]))}</div></div>
     <div class="facts2"><div>Vs trend line<b class="${cls(vsTrend)}">${pct(vsTrend)}</b></div><div>Momentum<b>${rk ? pct(rk.score) : "–"}</b></div><div>Rank<b>${rk ? "#" + rk.rank : "Not ranked"}</b></div></div>
+    ${(() => { const bk = book(TRADES, STATE.prices || {}); const h = bk.holdings.find((x) => x.ticker === k); if (!h) return "";
+      const st = positionStats(k, h.units, h.lots); const v = h.units * (st.now ?? 0), g = v - h.cost;
+      return `<div class="panel" style="padding:12px;margin-bottom:10px"><b>Your position:</b> ${num(h.units)} units at ${money(h.cost / h.units, 2)} average, worth ${money(v)}.
+        <span class="${cls(g)}">${signed$(g)} (${pct(g / h.cost)}) since bought</span>${st.dayChg != null ? `, <span class="${cls(st.dayChg)}">${signed$(st.dayChg)} ${st.dayLabel === "Today" ? "today" : "on " + esc(st.dayLabel)}</span>` : ""}.</div>`; })()}
     <p class="note" style="margin:0">${esc(status)}.</p>
     <div class="seg" role="group" aria-label="Chart period">${ranges.map(([n, l]) => `<button data-range="${n}" aria-pressed="${SHEET.range === n}">${l}</button>`).join("")}</div>
     ${priceChart(k, SHEET.range)}${intraChart}</div>`;
@@ -561,6 +579,70 @@ function donut(items, label) {
 }
 const PALETTE = ["var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)", "var(--c5)", "var(--c6)"];
 
+/* ---------- your positions (what you actually own) ---------- */
+function positionStats(k, units, lots) {
+  const today = sydParts().date;
+  const c = CHARTS && CHARTS.series && CHARTS.series[k];
+  const now = (STATE.prices || {})[k] ?? (c ? c.close.filter((v) => v != null).slice(-1)[0] : null);
+  let dayLabel = null, dayChg = null;
+  if (c && now != null) {
+    const lastDate = CHARTS.dates[CHARTS.dates.length - 1];
+    const closes = c.close;
+    // change on the latest trading day: from the previous close, or from your purchase price if you bought that day
+    let prev = null; for (let i = closes.length - 2; i >= 0; i--) if (closes[i] != null) { prev = closes[i]; break; }
+    if (prev != null) {
+      dayLabel = lastDate === today ? "Today" : dayName(lastDate);
+      dayChg = lots.reduce((a, l) => a + l.units * (now - (l.date === lastDate ? l.price : prev)), 0);
+    }
+  }
+  return { now, dayLabel, dayChg };
+}
+function positionsCard(s, bk) {
+  if (!bk.count) return `<section class="panel" style="margin-bottom:16px"><h3>Your holdings</h3>
+    <p class="note" style="margin:0">You haven't recorded any purchases yet. After you buy in Betashares, record it in Orders: tap “I did this” on an order, or use “Record another trade”.</p></section>`;
+  let invested = 0, worth = 0, dayTotal = 0, dayKnown = false, dayLabel = null;
+  const rows = bk.holdings.map((h) => {
+    const st = positionStats(h.ticker, h.units, h.lots);
+    const value = st.now != null ? h.units * st.now : h.value;
+    const gain = value != null ? value - h.cost : null;
+    invested += h.cost; worth += value || 0;
+    if (st.dayChg != null) { dayTotal += st.dayChg; dayKnown = true; dayLabel = st.dayLabel; }
+    const first = h.lots.map((l) => l.date).sort()[0];
+    const avg = h.cost / h.units;
+    return `<li>
+      <div><span class="t" style="font-size:1.1rem">${etf(h.ticker)}</span>
+        <div class="sub2">${num(h.units)} units, bought ${esc(dayName(first))} at ${money(avg, 2)}${h.lots.length > 1 ? " (average)" : ""}</div>
+        <div class="sub2">Now ${money(st.now, 2)} · cost ${money(h.cost)}</div></div>
+      <div><div class="val">${money(value)}</div>
+        <div class="chg ${cls(gain)}">${signed$(gain)} (${pct(h.cost ? gain / h.cost : null)}) since bought</div>
+        ${st.dayChg != null ? `<div class="chg ${cls(st.dayChg)}">${signed$(st.dayChg)} ${esc(st.dayLabel.toLowerCase() === "today" ? "today" : "on " + st.dayLabel)}</div>` : ""}</div>
+    </li>`;
+  }).join("");
+  const gainAll = worth - invested;
+  const checked = (s.status || {}).checked;
+  return `<section class="panel" style="margin-bottom:16px"><h3>Your holdings</h3>
+    <ul class="positions">${rows}</ul>
+    <div class="postotal"><span>Invested <b>${money(invested)}</b></span><span>Worth <b>${money(worth)}</b></span>
+      <span>Gain <b class="${cls(gainAll)}">${signed$(gainAll)} (${pct(invested ? gainAll / invested : null)})</b></span>
+      ${dayKnown ? `<span>${esc(dayLabel === "Today" ? "Today" : dayLabel)} <b class="${cls(dayTotal)}">${signed$(dayTotal)}</b></span>` : ""}
+      <span>Cash <b>${money(Math.abs(bk.cash) < 0.5 ? 0 : bk.cash)}</b></span></div>
+    <p class="chart-note">Prices about 20 minutes delayed, last checked ${esc(when(checked))}. Tap an ETF for its chart with your purchase price marked.</p></section>`;
+}
+function modeBar() {
+  const real = isReal();
+  return `<div class="modebar"><b>Mode</b>
+    <div class="seg" role="group" aria-label="Trading mode">
+      <button data-setmode="paper" aria-pressed="${!real}">Paper</button><button data-setmode="real" aria-pressed="${real}">Real money</button></div>
+    <span class="what">${real ? "Orders are sized from what you actually hold and your real cash." : "Orders follow the imaginary portfolio, scaled to your amount. Your recorded trades are still tracked."}</span></div>`;
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-setmode]"); if (!b) return;
+  const want = b.dataset.setmode; if ((want === "real") === isReal()) return;
+  if (want === "real" && !confirm(`Switch to real money? Orders will be sized from your recorded holdings and your investment amount of ${money(CAPITAL)}.`)) return;
+  try { await saveSettings({ mode: want }); render(); banner(want === "real" ? "warn" : null, "Real-money mode is on", "Your own orders arrive at the next check (within 15 minutes in ASX hours), or tap Recalculate in Orders."); }
+  catch (err) { banner("err", "Couldn't change mode", err.message); }
+});
+
 /* ---------- render ---------- */
 const REGIME = {
   bull: ["Uptrend", "The ASX 200 is above its 200-day average and rising. Strategy B can hold up to 5 ETFs."],
@@ -614,26 +696,26 @@ function renderOverview(s, bk, ad) {
 
   const tile = (k, v, sub, extra = "", text = false) => `<div class="tile ${extra}"><div class="k">${k}</div><div class="v${text ? " text" : ""}">${v}</div><div class="s">${sub}</div></div>`;
   const tiles = [
-    tile(`<span class="swatch" style="background:currentColor"></span>Recommended (Strategy B)`, money(toAmt(last.B)), `${pct(last.B / START - 1)} since ${esc(dayName(s.started))}`, "lead"),
+    tile(`<span class="swatch" style="background:currentColor"></span>If you followed every recommendation`, money(toAmt(last.B)), `${pct(last.B / START - 1)} since ${esc(dayName(s.started))}`, "lead"),
     bk.count ? tile(`<span class="swatch" style="background:var(--Y)"></span>Your portfolio`, money(yourValue), provisional ? "Provisional until the next check" : `${pct(yourValue / CAPITAL - 1)} on ${money(CAPITAL)}`)
              : tile(`<span class="swatch" style="background:var(--Y)"></span>Your portfolio`, "Not recorded", "Mark orders as done in Orders"),
-    tile("You vs recommended", lastCmp ? signed$(lastCmp.Y - lastCmp.R) : "–", lastCmp ? `${pct(lastCmp.Y / lastCmp.R - 1)} since ${esc(dayName(mine.compare_from))}` : "Shown once you record trades"),
+    tile("You vs following them all", lastCmp ? signed$(lastCmp.Y - lastCmp.R) : "–", lastCmp ? `${pct(lastCmp.Y / lastCmp.R - 1)} since ${esc(dayName(mine.compare_from))}` : "Shown once you record trades"),
     tile("Orders followed", ad.done + ad.skipped ? `${ad.done} of ${ad.done + ad.skipped}` : "–", `${ad.open} waiting${ad.slip != null ? `, prices ${pct(ad.slip, 2)} vs suggested` : ""}`),
-    tile(`<span class="swatch" style="background:var(--M)"></span>Buy and hold`, money(toAmt(last.M)), `${pct(last.M / START - 1)} (40% STW, 40% IVV, 20% VEU)`),
-    tile("Worst fall so far", pct(worst), "Strategy B, peak to low"),
+    tile(`<span class="swatch" style="background:var(--M)"></span>Index yardstick`, money(toAmt(last.M)), `${pct(last.M / START - 1)} (40% STW, 40% IVV, 20% VEU)`),
+    tile("Worst fall so far", pct(worst), "Following every recommendation, peak to low"),
     tile("Next weekly check", esc(nextWeekly(s)), `Rules version ${s.rules_version || 1}`, "", true),
     tile("Held under 12 months", bk.count ? String(shortLots.length) + (shortLots.length === 1 ? " parcel" : " parcels") : "–",
          nextLong ? `Next turns long-term ${esc(dateLong(nextLong))}` : "Gains here are taxed in full"),
   ].join("");
 
   const cmpChart = mh.length >= 2
-    ? legend([["Recommended", "var(--navy)"], ["What you did", "var(--Y)"]]) + lineChart([
+    ? legend([["If you'd followed every recommendation", "var(--navy)"], ["What you actually have", "var(--Y)"]]) + lineChart([
         { points: mh.map((p) => ({ d: p.d, v: p.R })), color: "var(--navy)", w: 2.6 },
         { points: mh.map((p) => ({ d: p.d, v: p.Y })), color: "var(--Y)", w: 2.6 }], "Recommended versus your actual portfolio")
-      + `<p class="chart-note">Recommended shows what your money would be worth had it followed Strategy B exactly from ${esc(dateLong(mine.compare_from))}, starting from your actual value that day.</p>`
+      + `<p class="chart-note">The navy line is what your money would be worth had you placed every recommended order from ${esc(dateLong(mine.compare_from))}, starting from your actual value that day.</p>`
     : `<p class="chart-note">${bk.count ? "This fills in after your trades have been through two checks." : "Record what you actually bought and sold in the Orders tab. This chart then compares your real results with the recommendations."}</p>`;
 
-  const stratChart = legend([["Strategy B", "var(--navy)"], ["Strategy A (paper)", "var(--A)"], ["Buy and hold", "var(--M)", 1]]) + lineChart([
+  const stratChart = legend([["Every recommendation", "var(--navy)"], ["Strategy A (dip-buying, paper)", "var(--A)"], ["Index yardstick", "var(--M)", 1]]) + lineChart([
     { points: h.map((p) => ({ d: p.d, v: toAmt(p.M) })), color: "var(--M)", dash: "6 5", w: 1.8 },
     { points: h.map((p) => ({ d: p.d, v: toAmt(p.A) })), color: "var(--A)", w: 1.8 },
     { points: h.map((p) => ({ d: p.d, v: toAmt(p.B) })), color: "var(--navy)", w: 2.6 }], "Value of each paper portfolio over time");
@@ -652,10 +734,12 @@ function renderOverview(s, bk, ad) {
         <span>Trend since: <strong>${esc(dayName(s.regime_since))}</strong></span>
       </div>
     </section>
+    ${modeBar()}
+    ${positionsCard(s, bk)}
     <div class="tiles">${tiles}</div>
     <div class="grid2">
-      <section class="panel"><h3>Recommended vs what you did</h3>${cmpChart}</section>
-      <section class="panel"><h3>Strategies since ${esc(dayName(s.started))}</h3>${stratChart}<p class="chart-note">Shown for ${money(CAPITAL)}, after a 0.15% cost on every trade.</p></section>
+      <section class="panel"><h3>You vs following every recommendation</h3>${cmpChart}</section>
+      <section class="panel"><h3>The yardsticks since ${esc(dayName(s.started))}</h3>${stratChart}<p class="chart-note">Shown for ${money(CAPITAL)}, after a 0.15% cost on every trade.</p></section>
     </div>
     <div class="grid2" style="margin-top:12px">
       <section class="panel"><h3>Where the recommended money is</h3>${donut(recItems, "Recommended allocation")}</section>
@@ -855,7 +939,7 @@ function renderHoldings(s, bk) {
       <div class="panel scroll"><table><thead><tr><th>ETF and tax status</th><th class="r hide-sm">Units</th><th class="r">Value</th><th class="r">Gain</th></tr></thead>
       <tbody>${your || `<tr><td colspan="4">Nothing recorded yet. Use “I did this” on an order.</td></tr>`}${bk.count ? `<tr><td><div class="t">Cash</div></td><td class="hide-sm"></td><td class="r">${money(bk.cash)}</td><td></td></tr>` : ""}</tbody></table></div></section>
     ${real ? `<section><h2>Your realised gains</h2><div class="panel scroll"><table><thead><tr><th>Sold</th><th>ETF</th><th class="r">Gain</th><th class="r">Held</th><th>Tax</th></tr></thead><tbody>${real}</tbody></table></div></section>` : ""}
-    ${paper("Recommended: Strategy B", "Trend-following, checked weekly. Shown for your amount.", s.B, true)}
+    ${paper("If you followed every recommendation (Strategy B)", "The imaginary portfolio, scaled to your amount. Trend-following, checked weekly.", s.B, true)}
     ${paper("Strategy A (paper only, no alerts)", "Daily dip-buying, kept only as a comparison.", s.A, false)}
     <section><h2>Paper trade log</h2><div class="panel scroll"><table><thead><tr><th>Date</th><th>Strategy</th><th>Side</th><th>ETF</th><th class="r">Value</th></tr></thead>
       <tbody>${all || `<tr><td colspan="5">No trades yet.</td></tr>`}</tbody></table></div></section>`;
