@@ -25,8 +25,8 @@ def with_cash_history(px: pd.DataFrame) -> pd.DataFrame:
     return px
 
 
-def replay(px, turnover, start="2013-01-01", end=None):
-    ind = compute(px, turnover)
+def replay(px, turnover, start="2013-01-01", end=None, ind=None):
+    ind = compute(px, turnover) if ind is None else ind     # the sensitivity grid passes adjusted indicators
     idx = px.loc[start:end].index
     week_last = set(pd.Series(idx, index=idx).groupby(idx.to_period("W")).last())
     pB = PF.new_portfolio(px[C.CASH].loc[idx[0]]); pA = PF.new_portfolio(px[C.CASH].loc[idx[0]])
@@ -110,7 +110,9 @@ if __name__ == "__main__":
     import os, datetime as dt
     from .data import history
     from .indicators import clean_prices
+    from .research import fix_adjustments
     adj, close, turnover = history(os.environ["EODHD_API_KEY"], dt.date.today(), days=365 * 16)
+    adj = fix_adjustments(adj, close, os.environ["EODHD_API_KEY"], os.path.expanduser("~/.etf-signal-cache"))
     px = with_cash_history(clean_prices(adj).loc["2011-01-01":])
     df, st = report(px, turnover.reindex(px.index))
     pct = {"CAGR", "Volatility", "MaxDD", "Sales within 12 months", "Average invested", "CAGR 2013-2019", "CAGR 2020-now"}
