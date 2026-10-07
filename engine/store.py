@@ -65,16 +65,25 @@ class RepoStore:
     BRANCH = "main"
 
     def __init__(self, repo, token):
-        self.repo, self.token = repo.strip().strip("/"), token
+        # tolerate a pasted web address, ".git", spaces or a stray line break in the secrets
+        repo = repo.strip()
+        for pre in ("https://github.com/", "http://github.com/", "github.com/"):
+            if repo.lower().startswith(pre):
+                repo = repo[len(pre):]
+        repo = repo.strip("/")
+        if repo.endswith(".git"):
+            repo = repo[:-4]
+        self.repo, self.token = repo, token.strip()
         self._cache = {}
         self.s = requests.Session()
-        self.s.headers.update(_headers(token))
+        self.s.headers.update(_headers(self.token))
 
     def refresh(self):
         self._cache = {}
 
     def _url(self, path):
-        return f"{API}/repos/{self.repo}/{path}"
+        # no trailing slash: GitHub answers "Not Found" to /repos/owner/name/
+        return f"{API}/repos/{self.repo}" + (f"/{path}" if path else "")
 
     def _check(self, r, what):
         if r.status_code in (401, 403):
@@ -98,7 +107,7 @@ class RepoStore:
         return self._check(r, "reading the latest version").json()["object"]["sha"]
 
     def names(self):
-        r = self._check(self.s.get(self._url(f"contents/?ref={self.BRANCH}"), timeout=30), "listing files")
+        r = self._check(self.s.get(self._url(f"contents?ref={self.BRANCH}"), timeout=30), "listing files")
         return sorted(x["name"] for x in r.json() if x.get("type") == "file")
 
     def read(self, name, default=None):
