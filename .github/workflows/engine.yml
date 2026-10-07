@@ -1,4 +1,4 @@
-name: Signal engine
+lname: Signal engine
 
 on:
   schedule:
@@ -43,6 +43,9 @@ jobs:
       - name: Run engine
         env:
           EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
+          # Private data repository (recommended). While these two are set, the Gist below is only used once, to copy from.
+          DATA_REPO: ${{ secrets.DATA_REPO }}
+          DATA_TOKEN: ${{ secrets.DATA_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           VAPID_SUB: https://${{ github.repository_owner }}.github.io
