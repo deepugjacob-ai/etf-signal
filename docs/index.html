@@ -623,8 +623,10 @@ const INFO = {
   paperA: "Strategy A buys short dips and sells on the bounce. In testing it made about 0–1% a year after costs, so it runs silently as a comparison only.",
   log: "Every trade the two imaginary portfolios have made.",
   rankings: "ETFs that beat cash and sit above their 200-day trend line, ranked by momentum: their average return over 3, 6 and 12 months. Strategy B buys from the top: at most 5 ETFs (2 in a downtrend), no more than 2 per theme, and only above 101% of the trend line. ‘Theme full’ means it already holds 2 from that theme.",
+  review: "The scorecard for the real-money test, fixed now so January's decision can't be bent to fit the result. On track means: you followed at least 90% of orders; your prices were on average no more than 0.25% worse than suggested; your worst fall was within 2 points of following every recommendation; you didn't add money after the start; and you recorded each distribution within a month. Growth and worst fall are measured without counting deposits as gains.",
+  grid: "Strategy B replayed over 2013 to now with the live rules, then with 44 nearby settings, to see if its result against the index mix depends on one lucky or unlucky choice. It doesn't: every setting trails the mix, and every one has a smaller worst fall. Look at the spread, not the best row: picking the best-looking setting from a grid is how strategies get overfitted. The data has a correction for a provider error in IVV's 2013 prices.",
   dists: "Cash your ETFs paid out. The engine looks up each published distribution for the ETFs you hold and estimates what you got: the amount per unit times the units you held the day before the ex-date. Tap Record actual to enter what arrived in your account, or the units you got if you're on a reinvestment plan. Distributions count as cash in your portfolio, so your gain includes them. If the money went to your bank instead, also log it with Take money out.",
-  odds: "How often ETFs in a similar position (similar momentum and distance from their trend line) were higher after 1 month, 3 months and 1 year. Based on weekly snapshots of liquid ASX ETFs since 2012, dividends included. ‘Typical’ is the middle result; ‘bad case’ is the 1-in-10 worst. The 95% range shows how much to trust a figure; it allows for past cases overlapping in time, so longer horizons get wider ranges. History doesn't guarantee the future.",
+  odds: "How often ETFs in a similar position (similar momentum and distance from their trend line) were higher after 1 month, 3 months and 1 year. Based on weekly snapshots since 2012 of every ASX ETF that traded over $1M a day at the time, including ones that have since closed, with distributions included. Where there are enough examples, it uses only times when the market was in the same trend as now (uptrend, sideways or downtrend). ‘Typical’ is the middle result; ‘bad case’ is the 1-in-10 worst. The 95% range comes from resampling whole weeks of history, which allows for ETFs moving together and for overlapping periods. History doesn't guarantee the future.",
   chart: "Price over the chosen period. For the strategy's ETFs it also shows the 200-day trend line, the buy line (1% above it) and the sell line (2% below it). A dotted line marks your average cost if you hold it.",
   "set-connect": "Links this device to where the engine saves its results: your private GitHub repository (only you can see it), or a Gist on older setups. Enter it once on each device; it stays on that device only.",
   "set-live": "Optional. With a token here, Refresh asks the engine for fresh prices during ASX hours instead of waiting for the next scheduled check.",
@@ -672,38 +674,106 @@ function oddsAt(score, trend) {
   const i = ODDS.momentum_bins.findIndex(([a, b]) => score >= a && score < b);
   const j = ODDS.trend_bins.findIndex(([a, b]) => trend >= a && trend < b);
   if (i < 0 || j < 0) return null;
+  // the current market trend's own figures when there are enough of them, otherwise all markets together
+  const reg = STATE && ODDS.regimes && ODDS.regimes[STATE.regime] ? STATE.regime : null;
+  const R = reg ? ODDS.regimes[reg] : null;
   const cell = ODDS.cells[`${i},${j}`] || {}, mom = ODDS.by_momentum[String(i)] || {};
-  const pick = (h) => cell[h] ? { ...cell[h], src: "cell" } : mom[h] ? { ...mom[h], src: "band" } : null;
-  return { score, trend, mLabel: ODDS.momentum_bins[i][2], tLabel: ODDS.trend_bins[j][2], h: { "1m": pick("1m"), "3m": pick("3m"), "1y": pick("1y") }, any: ODDS.any };
+  const rcell = R ? (R.cells[`${i},${j}`] || {}) : {};
+  const pick = (h) => rcell[h] ? { ...rcell[h], src: "regime" } : cell[h] ? { ...cell[h], src: "cell" } : mom[h] ? { ...mom[h], src: "band" } : null;
+  const anyR = R && R.any ? R.any : null;
+  return { score, trend, regime: reg, mLabel: ODDS.momentum_bins[i][2], tLabel: ODDS.trend_bins[j][2],
+           h: { "1m": pick("1m"), "3m": pick("3m"), "1y": pick("1y") },
+           any: { "1m": (anyR && anyR["1m"]) || ODDS.any["1m"], "3m": (anyR && anyR["3m"]) || ODDS.any["3m"], "1y": (anyR && anyR["1y"]) || ODDS.any["1y"] } };
 }
+const REGIME_WORD = { bull: "an uptrend", sideways: "a sideways market", bear: "a downtrend" };
 function oddsTable(k) {
   const o = oddsFor(k);
   if (!o) return `<p class="chart-note">Historical odds need about a year of price history for this ETF.</p>`;
-  /* Weekly snapshots overlap: a 1-year result is shared by ~52 consecutive weekly samples.
-     Divide n by the horizon in weeks so the range isn't falsely narrow (still optimistic, since ETFs move together). */
+  const nb = (t) => `<span style="white-space:nowrap">${t}</span>`;
+  /* Older odds files had no stored ranges: fall back to a Wilson range on the number of separate periods. */
   const OVERLAP = { "1m": 4, "3m": 13, "1y": 52 };
   const stat = (x, h) => {
     if (!x) return { main: "–", sub: "" };
-    const eff = x.n ? Math.max(1, Math.round(x.n / OVERLAP[h])) : 0;
-    const ci = wilson(x.up, eff);
+    let ci = !bad(x.lo) && !bad(x.hi) ? [x.lo, x.hi] : null;
+    if (!ci && x.n) ci = wilson(x.up, Math.max(1, Math.round(x.n / OVERLAP[h])));
     const parts = [];
-    if (ci) parts.push(`95% range ${(ci[0] * 100).toFixed(0)}–${(ci[1] * 100).toFixed(0)}%`);
-    if (x.n) parts.push(`${x.n.toLocaleString("en-AU")} past cases, ≈${eff.toLocaleString("en-AU")} separate`);
+    if (ci) parts.push(nb(`95% range ${(ci[0] * 100).toFixed(0)}–${(ci[1] * 100).toFixed(0)}%`));
+    if (x.n) parts.push(nb(`${x.n.toLocaleString("en-AU")} cases`) + (x.weeks ? " " + nb(`in ${x.weeks} weeks`) : ""));
     return { main: (x.up * 100).toFixed(0) + "%", sub: parts.join(" · ") };
   };
   const row = (label, h) => {
     const x = stat(o.h[h], h), r = o.h[h], a = o.any[h];
-    return `<tr><td>${label}</td><td class="r">${x.main}<div class="th">${x.sub}</div><div class="th">any ETF ${a ? (a.up * 100).toFixed(0) + "%" : "–"}</div></td>
+    return `<tr><td>${label}</td><td class="r">${x.main}<div class="th">${x.sub}</div><div class="th">${nb(`any ETF ${a ? (a.up * 100).toFixed(0) + "%" : "–"}`)}</div></td>
       <td class="r ${r ? cls(r.median) : ""}">${r ? pct(r.median) : "–"}</td><td class="r ${r ? cls(r.bad) : ""}">${r ? pct(r.bad) : "–"}</td></tr>`;
   };
-  const fellBack = ["1m", "3m", "1y"].some((h) => o.h[h] && o.h[h].src === "band");
-  return `<p class="note" style="margin:4px 0 8px">${esc(k)} now has <b>${esc(o.mLabel)}</b> momentum and is <b>${esc(o.tLabel)}</b>. ETFs in that position were:</p>
-    <div class="scroll"><table class="odds"><thead><tr><th>After</th><th class="r">Higher</th><th class="r">Typical</th><th class="r">Bad case (1 in 10)</th></tr></thead>
+  const srcs = new Set(["1m", "3m", "1y"].map((h) => o.h[h] && o.h[h].src).filter(Boolean));
+  const where = o.regime ? (srcs.has("regime") && srcs.size === 1 ? ` in ${REGIME_WORD[o.regime]}, like now`
+    : srcs.has("regime") ? ` (in ${REGIME_WORD[o.regime]} where there are enough examples, otherwise in any market)` : " (in any market: too few examples in " + REGIME_WORD[o.regime] + ")") : "";
+  return `<p class="note" style="margin:4px 0 8px">${esc(k)} now has <b>${esc(o.mLabel)}</b> momentum and is <b>${esc(o.tLabel)}</b>. ETFs in that position${esc(where)} were:</p>
+    <div class="scroll"><table class="odds"><thead><tr><th>After</th><th class="r">Higher</th><th class="r">Typical</th><th class="r">Bad case<div class="th">1 in 10</div></th></tr></thead>
     <tbody>${row("1 month", "1m")}${row("3 months", "3m")}${row("1 year", "1y")}</tbody></table></div>
-    <p class="chart-note">A dash means too few past examples to say.${fellBack ? " This exact position is rare in the data, so a figure comes from all ETFs in the same momentum band instead." : ""} The 95% range shows how much to trust each figure. Past cases overlap in time (one bad year counts in 52 weekly snapshots), so the range uses the number of separate periods, not the raw count. A wide range means thin evidence. History, not a forecast.</p>`;
+    <p class="chart-note">A dash means too few past examples to say.${srcs.has("band") ? " Where this exact position is rare, a figure comes from all ETFs with the same momentum instead." : ""} The 95% range shows how much to trust each figure: it comes from resampling whole weeks of history, so a wide range means thin evidence. ${ODDS.version >= 2 ? "Includes ETFs that have since closed. " : ""}History, not a forecast.</p>`;
+}
+/* ---------- January review: the scorecard, agreed in advance (October 2026) ---------- */
+let SENS = null;
+fetch("sensitivity.json", { cache: "no-cache" }).then((r) => r.ok ? r.json() : null).then((d) => { SENS = d; if (STATE && STATE.B) render(); }).catch(() => {});
+const REVIEW_RULES = { adherence: 0.9, slippage: 0.0025, ddMargin: 0.02, distDays: 30 };
+/* Time-weighted growth of a value series that receives deposits (C = money put in so far): deposits don't count as gains. */
+function growth(hist, key) {
+  let idx = 1, peak = 1, worst = 0, prev = null, prevC = null;
+  for (const p of hist) {
+    const v = p[key];
+    if (bad(v)) continue;
+    if (prev != null && prev > 0) { idx *= (v - (p.C - prevC)) / prev; peak = Math.max(peak, idx); worst = Math.min(worst, idx / peak - 1); }
+    prev = v; prevC = p.C;
+  }
+  return { ret: idx - 1, worst };
+}
+function reviewCard(s, bk, ad) {
+  const mine = s.mine || {};
+  const today = sydParts().date;
+  // compare only over days where all three exist, so each starts from the same point
+  // (and only since paper trading began: before that the recommendations line is just a placeholder)
+  const hist = (mine.history || []).filter((p) => !bad(p.Y) && !bad(p.R) && !bad(p.M) && (!s.started || p.d >= s.started));
+  const hasMine = mine.has_trades && hist.length >= 2;
+  const Y = hasMine ? growth(hist, "Y") : null, R = hasMine ? growth(hist, "R") : null, M = hasMine ? growth(hist, "M") : null;
+  // orders: anything older than the current open order set counts; still-open current orders don't count yet
+  const cur = isReal() ? s.B.real_orders : s.B.orders, curDate = cur ? cur.date : null;
+  const judged = ad.rows.filter((r) => r.status !== "open" || r.date !== curDate);
+  const followed = judged.length ? judged.filter((r) => r.status === "done").length / judged.length : null;
+  const deposits = (mine.flows || []).filter((f) => f.side === "DEPOSIT");
+  const later = deposits.length > 1 ? deposits.slice(1) : [];
+  const oldEst = bk.dists.filter((d) => d.status === "estimated" && d.ex && daysBetween(d.pay || d.ex, today) > REVIEW_RULES.distDays);
+  const checks = [
+    ["Orders followed", followed == null ? null : followed >= REVIEW_RULES.adherence, followed == null ? "No orders to judge yet" : `${(followed * 100).toFixed(0)}% (${judged.filter((r) => r.status === "done").length} of ${judged.length})`, `at least ${REVIEW_RULES.adherence * 100}%`],
+    ["Price vs suggested", ad.slip == null ? null : ad.slip <= REVIEW_RULES.slippage, ad.slip == null ? "No trades recorded yet" : `${pct(ad.slip, 2)} on average`, `no worse than +${(REVIEW_RULES.slippage * 100).toFixed(2)}%`],
+    ["Your worst fall", !Y ? null : Y.worst >= R.worst - REVIEW_RULES.ddMargin, !Y ? "Shown once you've recorded trades" : `${pct(Y.worst)} vs ${pct(R.worst)} following every recommendation`, `within ${REVIEW_RULES.ddMargin * 100} points of the recommendations`],
+    ["No money added mid-test", !deposits.length ? null : later.length === 0, !deposits.length ? "Log your starting deposit with Add money" : later.length ? `${later.length} later deposit${later.length === 1 ? "" : "s"}: ${later.map((f) => dayName(f.date)).join(", ")}` : `Only the starting ${money(deposits[0].amount)}`, "one deposit, at the start"],
+    ["Distributions recorded", !bk.dists.length ? null : oldEst.length === 0, !bk.dists.length ? "None paid yet" : oldEst.length ? `${oldEst.length} still estimated, paid over ${REVIEW_RULES.distDays} days ago` : `All ${bk.dists.filter((d) => d.status === "recorded").length} recorded`, "each one recorded within a month"],
+  ];
+  const mark = (ok) => ok == null ? `<span class="chip open">Not yet</span>` : ok ? `<span class="chip done">On track</span>` : `<span class="chip skip">Off track</span>`;
+  const rows = checks.map(([k, ok, v, rule]) => `<tr><td><b>${esc(k)}</b><div class="th">${esc(rule)}</div></td><td>${esc(v)}</td><td class="r">${mark(ok)}</td></tr>`).join("");
+  const perf = hasMine ? `<tr><td>You</td><td class="r ${cls(Y.ret)}">${pct(Y.ret)}</td><td class="r">${pct(Y.worst)}</td></tr>
+      <tr><td>Every recommendation</td><td class="r ${cls(R.ret)}">${pct(R.ret)}</td><td class="r">${pct(R.worst)}</td></tr>
+      <tr><td>Index mix</td><td class="r ${cls(M.ret)}">${pct(M.ret)}</td><td class="r">${pct(M.worst)}</td></tr>` : "";
+  let grid = "";
+  if (SENS && SENS.rows) {
+    const live = SENS.rows.find((r) => r.live) || {}, m = SENS.mix || {}, sm = SENS.summary || {};
+    const years = Object.keys(live.yearly || {}).map((y) => `<tr><td>${esc(y)}${y === String(new Date().getFullYear()) ? " (so far)" : ""}</td><td class="r ${cls(live.yearly[y])}">${pct(live.yearly[y])}</td><td class="r ${cls((m.yearly || {})[y])}">${pct((m.yearly || {})[y])}</td></tr>`).join("");
+    grid = `<h3 style="margin-top:18px">Backtest check${ih("grid")}</h3>${ib("grid")}
+      <p class="note" style="margin:0 0 8px">${esc(dayName(SENS.start))} ${esc(SENS.start.slice(0, 4))} to ${esc(dayName(SENS.end))} ${esc(SENS.end.slice(0, 4))}, trades filled the next day after a 0.15% cost.
+        Strategy B at its rules: <b>${pct(live.cagr)}</b> a year, worst fall <b>${pct(live.max_dd)}</b>. Index mix: <b>${pct(m.cagr)}</b> a year, worst fall <b>${pct(m.max_dd)}</b>.
+        Across ${sm.runs} nearby settings (buy line 100–102%, sell line 97–99%, 3 to 7 holdings): ${pct(sm.cagr_min)} to ${pct(sm.cagr_max)} a year. None beat the index mix; all ${sm.dd_better_than_mix === sm.runs ? "" : sm.dd_better_than_mix + " "}had a smaller worst fall.</p>
+      <details><summary class="note" style="cursor:pointer">Year by year</summary><div class="scroll"><table><thead><tr><th>Year</th><th class="r">Strategy B</th><th class="r">Index mix</th></tr></thead><tbody>${years}</tbody></table></div></details>`;
+  }
+  return `<section class="panel" style="margin-top:12px"><h3>January review${ih("review")}</h3>${ib("review")}
+    <p class="note" style="margin:0 0 8px">Scorecard for the test${mine.start ? ` since ${esc(dateLong(mine.start))}` : ""}, agreed in advance. The verdict is about process and falls, not about beating the index.</p>
+    <div class="scroll"><table><tbody>${rows}</tbody></table></div>
+    ${hasMine ? `<h3 style="margin-top:14px">Same money, same days</h3><div class="scroll"><table><thead><tr><th></th><th class="r">Growth</th><th class="r">Worst fall</th></tr></thead><tbody>${perf}</tbody></table></div>
+      <p class="chart-note">Growth leaves out deposits, so it's comparable however much you put in.</p>` : ""}
+    ${grid}</section>`;
 }
 
-/* ---------- ETF price sheet ---------- */
 let CHARTS = null;
 const etf = (k) => CHARTS && CHARTS.series && CHARTS.series[k] ? `<button class="etf" data-etf="${esc(k)}" aria-label="Show ${esc(k)} price chart">${esc(k)}</button>` : esc(k);
 let SHEET = { k: null, range: 63 };
@@ -1149,7 +1219,7 @@ function investCard(s, bk) {
   if (!INVEST.open) return `<div class="row" style="margin-bottom:16px"><button class="btn" data-inv="open" style="flex:1">Invest now: split new money across today's picks</button></div>`;
   const plan = INVEST.plan;
   const oddsLine = (k) => { const o = oddsFor(k); const y = o && (o.h["1y"] || o.h["3m"]); const lab = o && o.h["1y"] ? "1 yr" : "3 mths";
-    return y ? `<div class="th">Similar ETFs: higher after ${lab} ${(y.up * 100).toFixed(0)}% of the time, bad case ${pct(y.bad)}</div>` : ""; };
+    return y ? `<div class="th">Similar ETFs: higher after ${lab} ${(y.up * 100).toFixed(0)}% of the time${!bad(y.lo) ? ` (range ${(y.lo * 100).toFixed(0)}–${(y.hi * 100).toFixed(0)}%)` : ""}, bad case ${pct(y.bad)}</div>` : ""; };
   const rows = plan && plan.lines.length ? plan.lines.map((l, i) => `<tr><td><div class="t">${etf(l.k)}</div>${oddsLine(l.k)}</td>
       <td class="r"><input type="number" step="any" min="0" data-inv-u="${i}" value="${l.units}" style="width:4.2em;padding:6px;text-align:right"></td>
       <td class="r"><input type="number" step="any" min="0" data-inv-p="${i}" value="${l.p}" style="width:5em;padding:6px;text-align:right"></td>
@@ -1319,6 +1389,7 @@ function renderOverview(s, bk, ad) {
     ${coreCard(s, false)}
     <div style="display:flex;align-items:center;margin:0 0 6px"><span class="note">Summary</span>${ih("tiles")}</div>${ib("tiles")}
     <div class="tiles">${tiles}</div>
+    ${reviewCard(s, bk, ad)}
     <div class="grid2">
       <section class="panel"><h3>You vs following every recommendation${ih("cmp")}</h3>${ib("cmp")}${cmpChart}</section>
       <section class="panel"><h3>The yardsticks since ${esc(dayName(s.started))}${ih("yard")}</h3>${ib("yard")}${stratChart}<p class="chart-note">Shown for ${money(CAPITAL)}, after a 0.15% cost on every trade.</p></section>

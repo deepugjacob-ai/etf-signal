@@ -97,15 +97,24 @@ EODHD_API_KEY=your_key python -m engine.backtest
 
 The live engine and the backtest share the same decision code, so the backtest tests exactly what runs live.
 
+Two more offline scripts, neither of which changes the live rules:
+
+- `python -m engine.sensitivity` replays Strategy B with nearby settings (buy line 100–102%, sell line 97–99%, 3 to 7 holdings) and writes `docs/sensitivity.json`, shown in the dashboard's January review. Result: 7.7% to 12.2% a year across 45 settings, against 13.1% for the index mix; none beat it, all had a smaller worst fall. Read the spread, not the best row.
+- `python -m engine.odds_build` rebuilds `docs/odds.json`, the historical odds (see ETF price charts).
+
+Both cache downloaded prices in `~/.etf-signal-cache` (or `--cache DIR`).
+
 ## Backtest results (rules version 2, 2 Jan 2013 to 2 Oct 2026)
 
 Trades are filled at the next day's close after each decision, with a 0.15% cost on every trade.
 
 | | Per year | Volatility | Sharpe | Worst fall | $10k became |
 |---|---|---|---|---|---|
-| Strategy B | 11.1% | 11.2% | 0.77 | −17.8% | $42,966 |
-| Strategy A (paper) | 0.9% | 6.4% | −0.23 | −16.4% | $11,358 |
-| Buy and hold 40/40/20 | 13.8% | 12.0% | 0.92 | −27.8% | $59,371 |
+| Strategy B | 10.6% | 11.2% | 0.73 | −17.8% | $40,367 |
+| Strategy A (paper) | 0.9% | 6.4% | −0.23 | −16.4% | $11,307 |
+| Buy and hold 40/40/20 | 13.1% | 11.9% | 0.88 | −27.8% | $54,690 |
+
+Corrected 7 October 2026. EODHD's distribution-adjusted prices for IVV were wrong in 2013 (+94% instead of about +54%, checked against US IVV converted to Australian dollars), which flattered both the index mix and Strategy B. The research scripts now rebuild any ETF with that kind of error from its real prices and distributions (`engine/research.py`). Earlier figures (11.1% and 13.8%) used the faulty data.
 
 Strategy B holds an ETF for about 156 days on average, and 88% of its sales happen within 12 months, so most gains would be taxed without the 50% discount. These results use only ETFs that still exist today, which flatters them.
 
@@ -128,6 +137,20 @@ When you sell part of a holding, the tool counts the parcels that create the lea
 ## Adding money over time
 
 On the Overview, under **Your holdings**, tap **Add money** whenever you move money into Betashares for this strategy (or **Take money out**), with the date. Your gain is then measured against what you've actually put in, and the two yardsticks ("every recommendation" and the index mix) get the same deposits on the same days, so the comparison stays fair however often you add money. The first time you add money, your original starting amount is kept as the first deposit.
+
+## January review
+
+The Overview has a scorecard for the real-money test, with the pass marks fixed in advance (October 2026):
+
+| Check | On track if |
+|---|---|
+| Orders followed | at least 90% |
+| Price vs suggested | on average no more than 0.25% worse |
+| Your worst fall | within 2 points of following every recommendation |
+| No money added mid-test | one deposit, at the start |
+| Distributions recorded | each within a month of being paid |
+
+It also shows your growth and worst fall against every recommendation and the index mix on the same deposits (deposits aren't counted as gains), and the backtest check. The January verdict is about process and falls, not about beating the index. Any rule change after January must come from the sensitivity grid, be tested on data it wasn't chosen on, and run its own paper period before real money follows it.
 
 ## Real-money mode
 
@@ -158,7 +181,7 @@ A test run should return status 204. GitHub's own timer stays on as a backup; ov
 
 Tap any underlined ETF name (in Orders, Holdings or Rankings) to see its price over 1, 3, 6 or 12 months, with the 200-day trend line, the buy line (+1%) and sell line (−2%), your average cost if you hold it, and today's 20-minute snapshots.
 
-The historical odds under each chart use momentum and trend-line distance measured on distribution-adjusted prices, exactly as the strategy and the odds table measure them. The 95% ranges allow for the fact that weekly samples overlap in time.
+The historical odds under each chart use momentum and trend-line distance measured on distribution-adjusted prices, exactly as the strategy does. The table is built from weekly snapshots since 2012 of every ASX ETF that traded over $1M a day at the time, including ones that have since closed (geared, inverse, cash, currency, crypto and hedge funds are left out). Where there are enough examples it shows only times when the market was in the same trend as now. The 95% ranges come from resampling whole weeks of history in runs as long as the forecast period, which allows for ETFs moving together and for overlapping periods.
 
 ## Moving from the Gist
 
