@@ -117,6 +117,7 @@ svg.chart{width:100%;height:auto;display:block}
 .order .amt{font-weight:700;font-size:1.1rem;text-align:right}
 .order .act{grid-column:1 / 4;display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:4px}
 .ticket-foot{padding:12px 18px 16px;color:var(--muted);font-size:.88rem;border-top:1px solid var(--line)}
+.ticket-foot .tip{margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--ground);border:1px solid var(--line);color:var(--ink);line-height:1.45}
 .none{padding:18px}
 .chip{font-size:.8rem;font-weight:500;padding:3px 8px;border-radius:6px;white-space:nowrap}
 .chip.done{background:var(--buy-bg);color:var(--buy)} .chip.skip{background:var(--ochre-bg);color:var(--ochre)} .chip.open{background:var(--ground);color:var(--muted)}
@@ -1434,6 +1435,8 @@ function orderRow(it, date, ad, opts = {}) {
     ${opts.readonly ? "" : `<div class="act">${status}${actions}</div>`}${form}</li>`;
 }
 
+/* How to place orders: execution habits, not a rule change */
+const ORDER_TIP = `<div class="tip"><b>Placing orders:</b> use <b>limit orders</b> at or near the middle of the buy and sell prices, not market orders, and avoid the first 30 minutes after the open and the last few minutes before the close, when spreads are widest. Friday's orders arrive after 3pm: place them before 4pm if the prices look normal, otherwise on Monday between about 10:30am and 3:30pm. The backtest assumed trades at the next day's close, so waiting until Monday is fine.</div>`;
 function renderOrders(s, bk, ad) {
   const o = s.B.orders; const keep = (o && o.keep) || [];
   const paperItems = (o && o.items) || [];
@@ -1451,7 +1454,7 @@ function renderOrders(s, bk, ad) {
         : `<div class="none">No changes this time. Keep holding ${keep.length ? keep.map(esc).join(", ") : "everything in AAA"}.</div>`}
       <div class="ticket-foot">${readonly
         ? `The $10,000 paper portfolio the strategy is measured against, shown for ${money(CAPITAL)}. Nothing to do here; your own orders are above.`
-        : `Amounts are for ${money(CAPITAL)}. After you trade in Betashares, tap “I did this” and enter your actual units and price, so the tool can compare your results with the recommendations.`} Next weekly check: <strong>${esc(nextWeekly(s))}</strong>.</div>
+        : `Amounts are for ${money(CAPITAL)}. After you trade in Betashares, tap “I did this” and enter your actual units and price, so the tool can compare your results with the recommendations.`} Next weekly check: <strong>${esc(nextWeekly(s))}</strong>.${readonly ? "" : ORDER_TIP}</div>
     </section>`;
 
   let ticket;
@@ -1468,8 +1471,9 @@ function renderOrders(s, bk, ad) {
         : ro.items.length ? `<ul class="orders">${ro.items.map((it) => orderRow(it, ro.date, ad)).join("")}</ul>`
         : `<div class="none">Nothing to do: your recorded holdings already match Strategy B (${(ro.targets || []).map(esc).join(", ") || "all in AAA"}).</div>`}
       ${skipped}
-      <div class="ticket-foot">Sized from your recorded holdings and cash (${ro ? money(ro.total) : money(CAPITAL)} in total). Place these in Betashares Direct, ideally before 4pm, then tap “I did this” with your actual units and price. If you've recorded trades or changed your amount since, recalculate so the orders match.
-        <div class="row" style="margin-top:10px"><button class="mini primary" data-act="recalc">Recalculate my orders</button><span class="note" id="recalcMsg"></span></div></div>
+      <div class="ticket-foot">Sized from your recorded holdings and cash (${ro ? money(ro.total) : money(CAPITAL)} in total). Place these in Betashares Direct (see the tip below), then tap “I did this” with your actual units and price. If you've recorded trades or changed your amount since, recalculate so the orders match.
+        <div class="row" style="margin-top:10px"><button class="mini primary" data-act="recalc">Recalculate my orders</button><span class="note" id="recalcMsg"></span></div>
+        ${ORDER_TIP.replace("waiting until Monday is fine.", "waiting until Monday is fine; tap Recalculate first so the units match Monday's prices.")}</div>
     </section>
     <div style="margin-top:22px">${paperTicket(true)}</div>`;
   }
