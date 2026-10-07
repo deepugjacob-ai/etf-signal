@@ -221,8 +221,26 @@ button.etf:focus-visible{outline:3px solid var(--navy);outline-offset:2px;border
     <div data-panel="settings" hidden>
       <section>
         <h2>Connect your data<button class="info" data-info="set-connect" aria-label="What is this section?" aria-expanded="false">i</button></h2><div class="infobox" data-infobox="set-connect" hidden></div>
-        <p class="sub">The engine saves its results to your private GitHub Gist. Enter the same Gist ID and token you saved as GitHub secrets. They stay on this device only.</p>
+        <p class="sub">Where the engine saves its results. Enter it once on each device; it stays on that device only.</p>
         <div class="panel">
+          <h3 style="margin-top:0">Private repository (recommended)</h3>
+          <div class="field">
+            <label for="drepo">Data repository</label>
+            <input id="drepo" type="text" autocomplete="off" spellcheck="false" placeholder="your-username/etf-data">
+            <div class="help">The private repository you made for your data. Only you can see it.</div>
+          </div>
+          <div class="field">
+            <label for="dtoken">Data token</label>
+            <input id="dtoken" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+            <div class="help">A fine-grained token for that one repository with “Contents: read and write”.</div>
+          </div>
+          <div class="row">
+            <button class="btn" id="saveRepo" type="button">Save and load</button>
+          </div>
+          <div class="msg" id="repoMsg" role="status"></div>
+        </div>
+        <details class="panel" style="margin-top:12px"><summary style="cursor:pointer;font-weight:600">Older setup: Gist</summary>
+          <p class="note">Only needed if you haven't moved to a private repository. When both are filled in, the private repository is used.</p>
           <div class="field">
             <label for="gist">Gist ID</label>
             <input id="gist" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. 3f2a9c…">
@@ -235,10 +253,10 @@ button.etf:focus-visible{outline:3px solid var(--navy);outline-offset:2px;border
           </div>
           <div class="row">
             <button class="btn" id="save" type="button">Save and load</button>
-            <button class="btn ghost" id="forget" type="button">Forget on this device</button>
           </div>
           <div class="msg" id="saveMsg" role="status"></div>
-        </div>
+        </details>
+        <div class="row" style="margin-top:12px"><button class="btn ghost" id="forget" type="button">Forget my data connection on this device</button></div>
       </section>
       <section>
         <h2>Live updates (optional)<button class="info" data-info="set-live" aria-label="What is this section?" aria-expanded="false">i</button></h2><div class="infobox" data-infobox="set-live" hidden></div>
@@ -334,17 +352,26 @@ const dateLong = (ymd) => ymd ? new Date(ymd + "T12:00:00Z").toLocaleDateString(
 const daysBetween = (a, b) => Math.round((new Date(b + "T12:00:00Z") - new Date(a + "T12:00:00Z")) / 86400000);
 const addDays = (ymd, n) => new Date(new Date(ymd + "T12:00:00Z").getTime() + n * 86400000).toISOString().slice(0, 10);
 
-/* ---------- GitHub gist access ---------- */
-async function gh(path, opts = {}) {
-  const token = store.get("token");
+/* ---------- where your data lives: a private GitHub repository (recommended) or a Gist (older setups) ---------- */
+const DATA = {
+  kind: () => store.get("datarepo") && store.get("dtoken") ? "repo" : "gist",
+  ok: () => !!((store.get("datarepo") && store.get("dtoken")) || (store.get("gist") && store.get("token"))),
+  moved: null,           // set when the Gist says your data has moved to a private repository
+};
+const utf8ToB64 = (txt) => { const b = new TextEncoder().encode(txt); let bin = ""; for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(bin); };
+const b64ToUtf8 = (b64) => new TextDecoder().decode(Uint8Array.from(atob(String(b64 || "").replace(/\s/g, "")), (c) => c.charCodeAt(0)));
+async function gh(path, opts = {}, token = store.get("token")) {
   const r = await fetch("https://api.github.com" + path, {
     ...opts, cache: "no-store",
-    headers: { "Authorization": "Bearer " + token, "Accept": "application/vnd.github+json", ...(opts.body ? { "Content-Type": "application/json" } : {}) },
+    headers: { "Authorization": "Bearer " + token, "Accept": "application/vnd.github+json", ...(opts.body ? { "Content-Type": "application/json" } : {}), ...(opts.headers || {}) },
   });
-  if (r.status === 401) throw new Error("GitHub rejected the token. Check it in Settings and that it has the gist permission.");
-  if (r.status === 404) throw new Error("Gist not found. Check the Gist ID in Settings.");
+  if (r.status === 401) throw new Error("GitHub rejected the token. Check it in Settings.");
+  if (r.status === 404 && opts.allow404) return null;
+  if (r.status === 404) throw new Error(DATA.kind() === "repo" ? "Data repository or file not found. Check the repository name and that the token can see it." : "Gist not found. Check the Gist ID in Settings.");
+  if (r.status === 403) throw new Error("GitHub refused access. Check the token's permissions in Settings.");
+  if (r.status === 409 || r.status === 422) { const e = new Error("conflict"); e.conflict = true; throw e; }
   if (!r.ok) throw new Error(`GitHub returned an error (${r.status}). Try Refresh in a minute.`);
-  return r.json();
+  return opts.raw ? r.text() : r.json();
 }
 async function readJson(files, name) {
   const f = files[name];
@@ -354,13 +381,57 @@ async function readJson(files, name) {
   return txt && txt.trim() ? JSON.parse(txt) : null;
 }
 const gistPath = () => "/gists/" + encodeURIComponent(store.get("gist"));
-
-/* Read the latest trade list, change it, save it. Re-reading first means a phone and a laptop can't overwrite each other. */
-async function mutateTrades(fn) {
+const repoPath = (name = "") => `/repos/${store.get("datarepo")}/contents/${name}`;
+/* Read several files. Returns {name: parsed JSON or null}. */
+async function readFiles(names) {
+  const out = {};
+  if (DATA.kind() === "repo") {
+    const tok = store.get("dtoken");
+    await Promise.all(names.map(async (n) => {
+      const txt = await gh(repoPath(n) + "?ref=main", { raw: true, allow404: true, headers: { "Accept": "application/vnd.github.raw+json" } }, tok);
+      out[n] = txt && String(txt).trim() ? JSON.parse(txt) : null;
+    }));
+    DATA.moved = null;
+    return out;
+  }
   const g = await gh(gistPath());
-  let list = (await readJson(g.files, "mytrades.json")) || [];
-  list = fn(list);
-  await gh(gistPath(), { method: "PATCH", body: JSON.stringify({ files: { "mytrades.json": { content: JSON.stringify(list) } } }) });
+  for (const n of names) { try { out[n] = await readJson(g.files, n); } catch (e) { if (n !== "charts.json") throw e; out[n] = null; } }
+  DATA.moved = await readJson(g.files, "moved.json").catch(() => null);
+  return out;
+}
+/* Read the latest copy of one file, change it, save it. Re-reading first means a phone and a laptop can't overwrite
+   each other; in the private repository GitHub also refuses a save based on an old copy, and we simply try again. */
+async function mutateFile(name, fn, empty) {
+  if (DATA.kind() === "gist") {
+    const g = await gh(gistPath());
+    if (await readJson(g.files, "moved.json").catch(() => null)) throw new Error("Your data has moved to your private repository. Connect it in Settings first, so nothing is saved to the old Gist.");
+    const cur = (await readJson(g.files, name)) ?? empty;
+    const next = fn(cur);
+    await gh(gistPath(), { method: "PATCH", body: JSON.stringify({ files: { [name]: { content: JSON.stringify(next) } } }) });
+    return next;
+  }
+  const tok = store.get("dtoken");
+  for (let attempt = 0; ; attempt++) {
+    const f = await gh(repoPath(name) + "?ref=main", { allow404: true }, tok);
+    let cur = empty;
+    if (f) {
+      const txt = f.content ? b64ToUtf8(f.content) : await gh(repoPath(name) + "?ref=main", { raw: true, headers: { "Accept": "application/vnd.github.raw+json" } }, tok);
+      cur = txt && txt.trim() ? JSON.parse(txt) : empty;
+    }
+    const next = fn(cur);
+    try {
+      await gh(repoPath(name), { method: "PUT", body: JSON.stringify({ message: `Dashboard: update ${name}`, content: utf8ToB64(JSON.stringify(next)), branch: "main", ...(f ? { sha: f.sha } : {}) }) }, tok);
+      return next;
+    } catch (e) {
+      if (!e.conflict || attempt >= 4) throw e.conflict ? new Error("Couldn't save: the data kept changing. Try again.") : e;
+      await new Promise((res) => setTimeout(res, 700 * (attempt + 1)));
+    }
+  }
+}
+
+/* Read the latest trade list, change it, save it. */
+async function mutateTrades(fn) {
+  const list = await mutateFile("mytrades.json", (l) => fn(Array.isArray(l) ? l : []), []);
   TRADES = list;
   const dep = list.filter((t) => t.status === "done" && (t.side === "DEPOSIT" || t.side === "WITHDRAW") && t.amount > 0);
   if (dep.length) { const net = dep.reduce((x, f) => x + (f.side === "DEPOSIT" ? 1 : -1) * f.amount, 0); if (net > 0) CAPITAL = net; }
@@ -371,24 +442,25 @@ const newId = () => "t" + Date.now().toString(36) + Math.random().toString(36).s
 /* ---------- load ---------- */
 async function load() {
   const btn = $("#refresh");
-  if (!store.get("gist") || !store.get("token")) { showTab("settings"); renderEmpty(); return; }
+  if (!DATA.ok()) { showTab("settings"); renderEmpty(); return; }
   btn.disabled = true; btn.textContent = "Loading…";
   try {
-    const g = await gh(gistPath());
-    const s = await readJson(g.files, "state.json");
-    const cfg = await readJson(g.files, "settings.json");
+    const F = await readFiles(["state.json", "settings.json", "mytrades.json", "core.json", "charts.json"]);
+    const s = F["state.json"];
+    const cfg = F["settings.json"];
     CFG = cfg || {};
     if (cfg && cfg.capital > 0) CAPITAL = Number(cfg.capital);
     syncModeUI();
     $("#capital").value = String(CAPITAL);
-    TRADES = (await readJson(g.files, "mytrades.json")) || [];
-    CORE_REC = (await readJson(g.files, "core.json")) || { lots: [] };
-    try { CHARTS = await readJson(g.files, "charts.json"); } catch (e) { CHARTS = null; }
+    TRADES = F["mytrades.json"] || [];
+    CORE_REC = F["core.json"] || { lots: [] };
+    CHARTS = F["charts.json"];
     STATE = s;
     const dep = (TRADES || []).filter((t) => t.status === "done" && (t.side === "DEPOSIT" || t.side === "WITHDRAW") && t.amount > 0);
     if (dep.length) { const net = dep.reduce((a, f) => a + (f.side === "DEPOSIT" ? 1 : -1) * f.amount, 0); if (net > 0) CAPITAL = net; }
     if (!s || !s.B) { renderEmpty("Connected. The engine hasn't saved any results yet: run it once from GitHub Actions (Run workflow, check now)."); return; }
     render();
+    if (DATA.moved) banner("warn", "Your data has moved", `The engine now saves to your private repository ${DATA.moved.repo || ""}. What you see here is the old copy in the Gist and won't update. Open Settings, connect the private repository, and this message goes away.`);
     if (SHEET.k) renderSheet();
   } catch (e) {
     banner("err", "Couldn't load your data", e.message);
@@ -401,27 +473,83 @@ function banner(kind, title, text) {
   $("#banner").innerHTML = kind ? `<div class="banner ${kind}" role="alert"><b>${esc(title)}</b>${esc(text)}</div>` : "";
 }
 function renderEmpty(text) {
-  const t = text || "Connect your Gist in Settings to see this week's signals.";
+  const t = text || "Connect your data in Settings to see this week's signals.";
   $("#overview").innerHTML = `<section class="hero"><div><div class="regime unknown">${text ? "Waiting" : "Not connected"}</div><p>${esc(t)}</p></div></section>`;
   $("#orders").innerHTML = ""; $("#holdings").innerHTML = ""; $("#rankings").innerHTML = "";
 }
 
-/* ---------- your trades: bookkeeping (first in, first out) ---------- */
+/* ---------- tax helpers (same rules as the engine) ---------- */
+/* First day a sale gets the 50% capital gains discount: held 12 months, not counting the day bought or the day sold. */
+function longTermFrom(ymd) {
+  const [y, m, d] = String(ymd).slice(0, 10).split("-").map(Number);
+  const next = m === 2 && d === 29 ? new Date(Date.UTC(y + 1, 1, 28)) : new Date(Date.UTC(y + 1, m - 1, d));
+  return addDays(next.toISOString().slice(0, 10), 1);
+}
+const isLongTerm = (bought, sold) => String(sold).slice(0, 10) >= longTermFrom(bought);
+/* Which parcels a sale uses: the least taxable first. A long-term gain counts half (the discount); losses count in full. */
+function parcelOrder(lots, price, on) {
+  const key = (l) => (price - l.price) * (price > l.price && isLongTerm(l.date, on) ? 0.5 : 1);
+  return lots.slice().sort((a, b) => key(a) - key(b) || a.date.localeCompare(b.date));
+}
+
+/* ---------- distributions: published amounts (from the engine) and the ones you've recorded ---------- */
+function distRecords(trades) {
+  return trades.filter((t) => t.status === "done" && t.side === "DIST" && t.amount > 0 && t.ticker && t.date && t.date <= sydParts().date);
+}
+/* Match each recorded distribution to a published one: the same ex-date, or the nearest one up to 75 days before
+   (or 10 days after) the date you recorded. Returns [{pub, rec}] plus unmatched records. */
+function matchDists(recs, pubs) {
+  const used = new Map(), loose = [];
+  for (const r of recs.slice().sort((a, b) => a.date.localeCompare(b.date))) {
+    const c = pubs.filter((p) => p.ticker === r.ticker && !used.has(p));
+    let pick = r.ex ? c.find((p) => p.ex === r.ex) : null;
+    if (!pick) {
+      const near = c.filter((p) => { const d = daysBetween(r.date, p.ex); return d >= -75 && d <= 10; });
+      pick = near.sort((a, b) => Math.abs(daysBetween(r.date, a.ex)) - Math.abs(daysBetween(r.date, b.ex)))[0] || null;
+    }
+    pick ? used.set(pick, r) : loose.push(r);
+  }
+  return { used, loose };
+}
+
+/* ---------- your trades: bookkeeping ---------- */
 function book(trades, prices) {
   const known = STATE && STATE.universe ? new Set(STATE.universe.map((u) => u.ticker)) : null;
-  const done = trades.filter((t) => t.status === "done" && t.units > 0 && t.price > 0 && (!known || known.has(t.ticker)))
-    .sort((a, b) => a.date.localeCompare(b.date) || (a.side === "BUY" ? -1 : 1));
-  const flows = trades.filter((t) => t.status === "done" && (t.side === "DEPOSIT" || t.side === "WITHDRAW") && t.amount > 0 && t.date <= sydParts().date);
+  const today = sydParts().date;
+  const done = trades.filter((t) => t.status === "done" && (t.side === "BUY" || t.side === "SELL") && t.units > 0 && t.price > 0 && (!known || known.has(t.ticker)));
+  const flows = trades.filter((t) => t.status === "done" && (t.side === "DEPOSIT" || t.side === "WITHDRAW") && t.amount > 0 && t.date <= today);
   const contributed = flows.length ? flows.reduce((a, f) => a + (f.side === "DEPOSIT" ? 1 : -1) * f.amount, 0) : (CFG.capital > 0 ? Number(CFG.capital) : CAPITAL);
-  const lots = {}; let cash = contributed; const realised = []; const today = sydParts().date;
-  for (const t of done) {
+  // distributions: published ones the engine found for your holdings, replaced by what you recorded
+  const traded = new Set(done.map((t) => t.ticker));
+  const pubs = (((STATE || {}).mine || {}).distributions || []).filter((d) => d.ex && traded.has(d.ticker));
+  const recs = distRecords(trades).filter((t) => !known || known.has(t.ticker));
+  const { used, loose } = matchDists(recs, pubs);
+  const dists = [
+    ...pubs.map((p) => { const r = used.get(p); return { ticker: p.ticker, ex: p.ex, pay: p.pay, per_unit: p.per_unit, units: p.units, estimate: p.estimate,
+      date: p.ex, amount: r ? +r.amount : p.estimate, drp: r && r.units > 0 ? +r.units : 0, rec: r || null, status: r ? "recorded" : "estimated" }; })
+      .filter((d) => d.rec || d.estimate > 0),
+    ...loose.map((r) => ({ ticker: r.ticker, ex: null, pay: r.date, per_unit: null, units: null, estimate: null, date: r.date,
+      amount: +r.amount, drp: r.units > 0 ? +r.units : 0, rec: r, status: "recorded" })),
+  ];
+  const ORD = { BUY: 1, SELL: 2, DIST: 3 };
+  const events = [...done.map((t) => ({ kind: t.side, d: t.date, t })), ...dists.map((x) => ({ kind: "DIST", d: x.date, x }))]
+    .sort((a, b) => a.d.localeCompare(b.d) || ORD[a.kind] - ORD[b.kind]);
+  const lots = {}; let cash = contributed; const realised = []; const received = {};
+  for (const e of events) {
+    if (e.kind === "DIST") {
+      const x = e.x; received[x.ticker] = (received[x.ticker] || 0) + x.amount;
+      if (x.drp > 0) (lots[x.ticker] = lots[x.ticker] || []).push({ date: x.rec.date, units: x.drp, price: x.amount / x.drp, drp: true });
+      else cash += x.amount;
+      continue;
+    }
+    const t = e.t;
     if (t.side === "BUY") { cash -= t.units * t.price; (lots[t.ticker] = lots[t.ticker] || []).push({ date: t.date, units: +t.units, price: +t.price }); }
     else {
       cash += t.units * t.price; let left = +t.units;
-      for (const lot of (lots[t.ticker] || [])) {
+      for (const lot of parcelOrder(lots[t.ticker] || [], +t.price, t.date)) {
         if (left <= 1e-9) break;
         const take = Math.min(left, lot.units);
-        realised.push({ ticker: t.ticker, date: t.date, gain: take * (t.price - lot.price), days: daysBetween(lot.date, t.date) });
+        realised.push({ ticker: t.ticker, date: t.date, units: take, gain: take * (t.price - lot.price), days: daysBetween(lot.date, t.date), bought: lot.date, long: isLongTerm(lot.date, t.date) });
         lot.units -= take; left -= take;
       }
       lots[t.ticker] = (lots[t.ticker] || []).filter((l) => l.units > 1e-9);
@@ -430,11 +558,24 @@ function book(trades, prices) {
   const holdings = Object.entries(lots).filter(([, ls]) => ls.length).map(([k, ls]) => {
     const units = ls.reduce((a, l) => a + l.units, 0), cost = ls.reduce((a, l) => a + l.units * l.price, 0);
     const price = prices && prices[k], value = price ? units * price : null;
-    const lotv = ls.map((l) => ({ ...l, days: daysBetween(l.date, today), longFrom: addDays(l.date, 366) }));
-    return { ticker: k, units, cost, price, value, gain: value == null ? null : value - cost, lots: lotv };
+    const lotv = ls.map((l) => ({ ...l, days: daysBetween(l.date, today), longFrom: longTermFrom(l.date), long: isLongTerm(l.date, today) }));
+    return { ticker: k, units, cost, price, value, gain: value == null ? null : value - cost, lots: lotv, dists: received[k] || 0 };
   }).sort((a, b) => (b.value || 0) - (a.value || 0));
   const value = cash + holdings.reduce((a, h) => a + (h.value || 0), 0);
-  return { holdings, cash, value, realised, count: done.length, contributed, flows, hasFlows: flows.length > 0 };
+  dists.sort((a, b) => b.date.localeCompare(a.date));
+  return { holdings, cash, value, realised, count: done.length, contributed, flows, hasFlows: flows.length > 0,
+           dists, distTotal: dists.reduce((a, x) => a + x.amount, 0), distRecs: recs.length };
+}
+/* Estimated tax on selling `units` now, using the same parcel choice. */
+function saleTax(lots, units, price, on) {
+  let left = units, shortG = 0, longG = 0, shortU = 0;
+  for (const l of parcelOrder(lots, price, on)) {
+    if (left <= 1e-9) break;
+    const take = Math.min(left, l.units), g = take * (price - l.price);
+    if (isLongTerm(l.date, on)) longG += g; else { shortG += g; shortU += take; }
+    left -= take;
+  }
+  return { gain: shortG + longG, short_gain: shortG, long_gain: longG, short_units: shortU };
 }
 
 /* ---------- did you follow the orders? ---------- */
@@ -463,28 +604,29 @@ const INFO = {
   market: "The overall trend of the Australian share market (the ASX 200), worked out from its 50- and 200-day averages. In an uptrend or sideways market, Strategy B can hold up to 5 ETFs; in a downtrend, at most 2, with the rest kept in cash. Prices are about 20 minutes delayed.",
   mode: "Paper: orders are for an imaginary portfolio scaled to your amount, so you can watch without risk. Real money: orders are sized from what you've actually recorded buying and your real cash. Your recorded trades are tracked in both modes.",
   invest: "Enter how much you want to invest today. It splits the money across the ETFs Strategy B holds right now, by the strategy's weights, giving more to picks you hold less of. With whole units, it rounds down and then uses the leftover. Each pick shows how ETFs in a similar position did historically. It follows the strategy's rules; it isn't a prediction.",
-  holdings: "What you've actually bought for the strategy, from your recorded trades: units, what you paid, value now, gain since you bought and the latest day's change. Use Add money and Take money out to log cash you move in or out, so your gain is measured against what you've put in.",
+  holdings: "What you've actually bought for the strategy, from your recorded trades: units, what you paid, value now, gain since you bought, distributions received and the latest day's change. The sell line is 98% of the 200-day average: if a holding drops below it during the week you get a heads-up, and the weekly check on Friday sells it if it's still below. Use Add money and Take money out to log cash you move in or out.",
   core: "Your investments outside the strategy: your own ETFs and the Betashares managed portfolio. They're tracked separately so they don't affect the strategy comparisons. Figures marked ‘estimated’ came from your statements and Betashares screen; correct them in Holdings with the exact numbers from the app.",
   tiles: "A quick summary. ‘If you followed every recommendation’ is the imaginary portfolio that places every order. ‘Your portfolio’ is your real money. ‘Index yardstick’ is a simple mix of 40% STW, 40% IVV and 20% VEU. Once you log deposits, all three use the same money on the same days. ‘Held under 12 months’ counts parcels whose gains would be taxed in full.",
   cmp: "Your real portfolio against the two yardsticks, each fed with your deposits on the same days, so the comparison is fair. The dotted grey line steps up with each deposit: being above it means you're ahead of the money you've put in.",
   yard: "How the imaginary portfolios have done since paper trading started: every Strategy B recommendation, Strategy A (dip-buying, kept for comparison) and the index mix. Shown for your amount, after trading costs.",
   donuts: "How the money is split across ETFs: the recommended portfolio on the left, and your real holdings and cash on the right.",
-  alerts: "The notifications sent to your devices: weekly orders (Fridays from 3pm), market trend changes, real-money order updates, and any problem with a check.",
+  alerts: "The notifications sent to your devices: weekly orders (Fridays from 3pm), market trend changes, real-money order updates, mid-week heads-ups when a holding drops below its sell line, and any problem with a check.",
   orders: "Strategy B's orders from its latest weekly check (Fridays from 3pm), scaled to your amount. After you trade in Betashares, tap ‘I did this’ and enter what you actually paid, or ‘Skipped’ if you didn't follow it.",
-  realorders: "Your own orders in real-money mode: what to buy or sell so your recorded holdings match Strategy B, sized from your real cash. Tap Recalculate after recording trades or adding money.",
+  realorders: "Your own orders in real-money mode: what to buy or sell so your recorded holdings match Strategy B, sized from your real cash. Each sale shows the estimated gain and how much is short-term (taxed in full). When you sell part of a holding, the tool counts the parcels with the least tax as sold first; Australia allows this as long as your records identify the parcels, and this record does. Tap Recalculate after recording trades or adding money.",
   paperorders: "The orders for the imaginary portfolio the strategy is measured against. There's nothing to do here in real-money mode.",
   earlier: "Every earlier order and whether you followed it. Price difference: positive means you paid more (or sold for less) than suggested.",
   record: "For trades that weren't in an order: buying earlier or later than suggested, or a different ETF.",
   trades: "Everything you've recorded: buys, sells, skipped orders, and money in or out. To fix a mistake, delete the entry and record it again.",
   stratholdings: "Your recorded strategy holdings, with each parcel's tax status. A gain on a parcel held under 12 months is taxed in full; after 12 months, the 50% capital gains discount applies.",
-  realised: "Gains and losses on what you've sold, how long you held each parcel, and whether the 50% discount applies.",
+  realised: "Gains and losses on what you've sold, how long you held each parcel, and whether the 50% discount applies (held at least 12 months, not counting the days bought and sold). Parcels with the least tax are counted as sold first.",
   paperB: "The imaginary portfolio that follows every recommendation, scaled to your amount, with how long it has held each ETF.",
   paperA: "Strategy A buys short dips and sells on the bounce. In testing it made about 0–1% a year after costs, so it runs silently as a comparison only.",
   log: "Every trade the two imaginary portfolios have made.",
   rankings: "ETFs that beat cash and sit above their 200-day trend line, ranked by momentum: their average return over 3, 6 and 12 months. Strategy B buys from the top: at most 5 ETFs (2 in a downtrend), no more than 2 per theme, and only above 101% of the trend line. ‘Theme full’ means it already holds 2 from that theme.",
-  odds: "How often ETFs in a similar position (similar momentum and distance from their trend line) were higher after 1 month, 3 months and 1 year. Based on weekly snapshots of liquid ASX ETFs since 2012, dividends included. ‘Typical’ is the middle result; ‘bad case’ is the 1-in-10 worst. History doesn't guarantee the future.",
+  dists: "Cash your ETFs paid out. The engine looks up each published distribution for the ETFs you hold and estimates what you got: the amount per unit times the units you held the day before the ex-date. Tap Record actual to enter what arrived in your account, or the units you got if you're on a reinvestment plan. Distributions count as cash in your portfolio, so your gain includes them. If the money went to your bank instead, also log it with Take money out.",
+  odds: "How often ETFs in a similar position (similar momentum and distance from their trend line) were higher after 1 month, 3 months and 1 year. Based on weekly snapshots of liquid ASX ETFs since 2012, dividends included. ‘Typical’ is the middle result; ‘bad case’ is the 1-in-10 worst. The 95% range shows how much to trust a figure; it allows for past cases overlapping in time, so longer horizons get wider ranges. History doesn't guarantee the future.",
   chart: "Price over the chosen period. For the strategy's ETFs it also shows the 200-day trend line, the buy line (1% above it) and the sell line (2% below it). A dotted line marks your average cost if you hold it.",
-  "set-connect": "Links this device to your private Gist, where the engine saves its results. Enter it once on each device; it stays on that device only.",
+  "set-connect": "Links this device to where the engine saves its results: your private GitHub repository (only you can see it), or a Gist on older setups. Enter it once on each device; it stays on that device only.",
   "set-live": "Optional. With a token here, Refresh asks the engine for fresh prices during ASX hours instead of waiting for the next scheduled check.",
   "set-mode": "Paper or real money. Real money sizes your orders from your recorded holdings and cash. You can also switch on the Overview.",
   "set-amount": "Only used until you log money in and out with Add money on the Overview. After that, the tool uses your actual deposits.",
@@ -506,30 +648,59 @@ document.addEventListener("click", (e) => {
 /* ---------- historical odds ---------- */
 let ODDS = null;
 fetch("odds.json", { cache: "no-cache" }).then((r) => r.ok ? r.json() : null).then((d) => { ODDS = d; if (STATE && STATE.B) render(); if (SHEET.k) renderSheet(); }).catch(() => {});
+/* Wilson 95% interval on a "higher" share: honest about small samples — the fewer past examples, the wider the band. */
+function wilson(up, n, z = 1.96) {
+  if (!(n > 0) || bad(up)) return null;
+  const d = 1 + z * z / n;
+  const centre = (up + z * z / (2 * n)) / d;
+  const half = (z / d) * Math.sqrt(up * (1 - up) / n + z * z / (4 * n * n));
+  return [Math.max(0, centre - half), Math.min(1, centre + half)];
+}
 function oddsFor(k) {
   if (!ODDS || !CHARTS || !CHARTS.series || !CHARTS.series[k]) return null;
+  const adj = CHARTS.stats && CHARTS.stats[k];      // the engine's figures on distribution-adjusted prices
+  if (adj && !bad(adj.score) && !bad(adj.trend)) return oddsAt(adj.score, adj.trend);
+  // fallback for older data: real prices (distributions not included)
   const c = CHARTS.series[k].close.filter((v) => v != null);
   if (c.length < 253) return null;
   const n = c.length - 1, now = c[n];
   const score = (now / c[n - 63] + now / c[n - 126] + now / c[n - 252]) / 3 - 1;
   const sma = c.slice(-200).reduce((a, v) => a + v, 0) / 200, trend = now / sma - 1;
+  return oddsAt(score, trend);
+}
+function oddsAt(score, trend) {
   const i = ODDS.momentum_bins.findIndex(([a, b]) => score >= a && score < b);
   const j = ODDS.trend_bins.findIndex(([a, b]) => trend >= a && trend < b);
   if (i < 0 || j < 0) return null;
   const cell = ODDS.cells[`${i},${j}`] || {}, mom = ODDS.by_momentum[String(i)] || {};
-  const pick = (h) => cell[h] || mom[h] || null;
+  const pick = (h) => cell[h] ? { ...cell[h], src: "cell" } : mom[h] ? { ...mom[h], src: "band" } : null;
   return { score, trend, mLabel: ODDS.momentum_bins[i][2], tLabel: ODDS.trend_bins[j][2], h: { "1m": pick("1m"), "3m": pick("3m"), "1y": pick("1y") }, any: ODDS.any };
 }
 function oddsTable(k) {
   const o = oddsFor(k);
   if (!o) return `<p class="chart-note">Historical odds need about a year of price history for this ETF.</p>`;
-  const row = (label, h) => { const x = o.h[h], a = o.any[h];
-    return `<tr><td>${label}</td><td class="r">${x ? (x.up * 100).toFixed(0) + "%" : "–"}<div class="th">any ETF ${a ? (a.up * 100).toFixed(0) + "%" : "–"}</div></td>
-      <td class="r ${x ? cls(x.median) : ""}">${x ? pct(x.median) : "–"}</td><td class="r ${x ? cls(x.bad) : ""}">${x ? pct(x.bad) : "–"}</td></tr>`; };
+  /* Weekly snapshots overlap: a 1-year result is shared by ~52 consecutive weekly samples.
+     Divide n by the horizon in weeks so the range isn't falsely narrow (still optimistic, since ETFs move together). */
+  const OVERLAP = { "1m": 4, "3m": 13, "1y": 52 };
+  const stat = (x, h) => {
+    if (!x) return { main: "–", sub: "" };
+    const eff = x.n ? Math.max(1, Math.round(x.n / OVERLAP[h])) : 0;
+    const ci = wilson(x.up, eff);
+    const parts = [];
+    if (ci) parts.push(`95% range ${(ci[0] * 100).toFixed(0)}–${(ci[1] * 100).toFixed(0)}%`);
+    if (x.n) parts.push(`${x.n.toLocaleString("en-AU")} past cases, ≈${eff.toLocaleString("en-AU")} separate`);
+    return { main: (x.up * 100).toFixed(0) + "%", sub: parts.join(" · ") };
+  };
+  const row = (label, h) => {
+    const x = stat(o.h[h], h), r = o.h[h], a = o.any[h];
+    return `<tr><td>${label}</td><td class="r">${x.main}<div class="th">${x.sub}</div><div class="th">any ETF ${a ? (a.up * 100).toFixed(0) + "%" : "–"}</div></td>
+      <td class="r ${r ? cls(r.median) : ""}">${r ? pct(r.median) : "–"}</td><td class="r ${r ? cls(r.bad) : ""}">${r ? pct(r.bad) : "–"}</td></tr>`;
+  };
+  const fellBack = ["1m", "3m", "1y"].some((h) => o.h[h] && o.h[h].src === "band");
   return `<p class="note" style="margin:4px 0 8px">${esc(k)} now has <b>${esc(o.mLabel)}</b> momentum and is <b>${esc(o.tLabel)}</b>. ETFs in that position were:</p>
     <div class="scroll"><table class="odds"><thead><tr><th>After</th><th class="r">Higher</th><th class="r">Typical</th><th class="r">Bad case (1 in 10)</th></tr></thead>
     <tbody>${row("1 month", "1m")}${row("3 months", "3m")}${row("1 year", "1y")}</tbody></table></div>
-    <p class="chart-note">A dash means too few past examples to say. History, not a forecast.</p>`;
+    <p class="chart-note">A dash means too few past examples to say.${fellBack ? " This exact position is rare in the data, so a figure comes from all ETFs in the same momentum band instead." : ""} The 95% range shows how much to trust each figure. Past cases overlap in time (one bad year counts in 52 weekly snapshots), so the range uses the number of separate periods, not the raw count. A wide range means thin evidence. History, not a forecast.</p>`;
 }
 
 /* ---------- ETF price sheet ---------- */
@@ -562,7 +733,9 @@ function renderSheet() {
   const c = CHARTS.series[k]; const u = (STATE.universe || []).find((x) => x.ticker === k) || {};
   const intra = (CHARTS.intraday || {})[k] || [];
   const lastClose = c.close.filter((v) => v != null); const now = intra.length ? intra[intra.length - 1][1] : lastClose[lastClose.length - 1];
-  const prevClose = lastClose.length >= 2 ? (intra.length && CHARTS.dates[CHARTS.dates.length - 1] === CHARTS.intraday_date ? lastClose[lastClose.length - 2] : lastClose[lastClose.length - 2]) : null;
+  /* If today's live snapshots exist but the daily series doesn't have today yet, yesterday is the last daily close. */
+  const todayInDaily = CHARTS.dates[CHARTS.dates.length - 1] === CHARTS.intraday_date;
+  const prevClose = intra.length && !todayInDaily ? (lastClose.length ? lastClose[lastClose.length - 1] : null) : (lastClose.length >= 2 ? lastClose[lastClose.length - 2] : null);
   const t = c.trend[c.trend.length - 1];
   const vsTrend = t ? now / t - 1 : null;
   const rk = (STATE.rankings || []).find((r) => r.ticker === k);
@@ -618,7 +791,7 @@ async function updateNow() {
     for (let i = 0; i < 14; i++) {        // poll for up to about 3.5 minutes
       await new Promise((res) => setTimeout(res, 15000));
       btn.textContent = `Updating… ${Math.min(99, (i + 1) * 15)}s`;
-      const g = await gh(gistPath()); const s = await readJson(g.files, "state.json");
+      const s = (await readFiles(["state.json"]))["state.json"];
       if (s && s.status && s.status.checked !== before) { await load(); return; }
     }
     banner("warn", "Still waiting for the engine", "GitHub hasn't finished the run yet. Try Refresh again in a minute.");
@@ -688,6 +861,12 @@ function positionStats(k, units, lots) {
   }
   return { now, dayLabel, dayChg };
 }
+function sellLineNote(k) {
+  const r = ((STATE || {}).sell_line || {})[k];
+  if (!r || bad(r.line)) return "";
+  return r.below ? `<div class="sub2 neg"><b>Below its sell line of ${money(r.line, 2)}</b>${r.since ? ` since ${esc(dayName(r.since))}` : ""}. The weekly check sells it on Friday if it's still below.</div>`
+    : `<div class="sub2">Sell line ${money(r.line, 2)} (${pct(r.gap)} above)</div>`;
+}
 function positionsCard(s, bk) {
   if (!bk.count) return `<section class="panel" style="margin-bottom:16px"><h3>Your holdings${ih("holdings")}</h3>${ib("holdings")}
     <p class="note" style="margin:0 0 10px">${bk.hasFlows ? `You've put in ${money(bk.contributed)} and haven't recorded any purchases yet.` : "You haven't recorded any purchases yet."} After you buy in Betashares, record it in Orders: tap “I did this” on an order, or use “Record another trade”.</p>${moneyControls()}</section>`;
@@ -703,7 +882,7 @@ function positionsCard(s, bk) {
     return `<li>
       <div><span class="t" style="font-size:1.1rem">${etf(h.ticker)}</span>
         <div class="sub2">${num(h.units)} units, bought ${esc(dayName(first))} at ${money(avg, 2)}${h.lots.length > 1 ? " (average)" : ""}</div>
-        <div class="sub2">Now ${money(st.now, 2)} · cost ${money(h.cost)}</div></div>
+        <div class="sub2">Now ${money(st.now, 2)} · cost ${money(h.cost)}</div>${h.dists > 0.005 ? `<div class="sub2">Distributions received ${money(h.dists)}</div>` : ""}${sellLineNote(h.ticker)}</div>
       <div><div class="val">${money(value)}</div>
         <div class="chg ${cls(gain)}">${signed$(gain)} (${pct(h.cost ? gain / h.cost : null)}) since bought</div>
         ${st.dayChg != null ? `<div class="chg ${cls(st.dayChg)}">${signed$(st.dayChg)} ${esc(st.dayLabel.toLowerCase() === "today" ? "today" : "on " + st.dayLabel)}</div>` : ""}</div>
@@ -718,7 +897,8 @@ function positionsCard(s, bk) {
       ${dayKnown ? `<span>${esc(dayLabel === "Today" ? "Today" : dayLabel)} <b class="${cls(dayTotal)}">${signed$(dayTotal)}</b></span>` : ""}
       <span>Cash <b>${money(Math.abs(bk.cash) < 0.5 ? 0 : bk.cash)}</b></span></div>
     <div class="postotal"><span>You've put in <b>${money(bk.contributed)}</b></span><span>Worth <b>${money(worth + bk.cash)}</b></span>
-      <span>Overall gain <b class="${cls(worth + bk.cash - bk.contributed)}">${signed$(worth + bk.cash - bk.contributed)}</b></span></div>
+      <span>Overall gain <b class="${cls(worth + bk.cash - bk.contributed)}">${signed$(worth + bk.cash - bk.contributed)}</b></span>
+      ${bk.distTotal > 0.005 ? `<span>Includes distributions <b>${money(bk.distTotal)}</b></span>` : ""}</div>
     ${moneyControls()}
     <p class="chart-note">Prices about 20 minutes delayed, last checked ${esc(when(checked))}. Tap an ETF for its chart with your purchase price marked.</p></section>`;
 }
@@ -782,11 +962,7 @@ document.addEventListener("click", async (e) => {
 let CORE_REC = { lots: [] };
 let CORE_FORM = null;   // "buy" | "fix" | "hgp" | null
 async function mutateCore(fn) {
-  const g = await gh(gistPath());
-  let cur = (await readJson(g.files, "core.json")) || { lots: [] };
-  cur = fn(cur);
-  cur.updated = new Date().toISOString();
-  await gh(gistPath(), { method: "PATCH", body: JSON.stringify({ files: { "core.json": { content: JSON.stringify(cur) } } }) });
+  const cur = await mutateFile("core.json", (c) => { const x = fn(c && c.lots ? c : { lots: [] }); x.updated = new Date().toISOString(); return x; }, { lots: [] });
   CORE_REC = cur; render();
 }
 const coreGroups = () => [...new Set((CORE_REC.lots || []).map((l) => l.group || "Core"))];
@@ -1088,7 +1264,7 @@ function renderOverview(s, bk, ad) {
   const mh = (mine.history || []).filter((p) => !bad(p.R));
   const lastCmp = mh[mh.length - 1];
   let peak = -Infinity, worst = 0; h.forEach((p) => { peak = Math.max(peak, p.B); worst = Math.min(worst, p.B / peak - 1); });
-  const shortLots = bk.holdings.flatMap((x) => x.lots).filter((l) => l.days < 365);
+  const shortLots = bk.holdings.flatMap((x) => x.lots).filter((l) => !l.long);
   const nextLong = shortLots.map((l) => l.longFrom).sort()[0];
 
   const tile = (k, v, sub, extra = "", text = false) => `<div class="tile ${extra}"><div class="k">${k}</div><div class="v${text ? " text" : ""}">${v}</div><div class="s">${sub}</div></div>`;
@@ -1178,8 +1354,12 @@ function orderRow(it, date, ad, opts = {}) {
       <div><label for="f-price">Price per unit</label><input id="f-price" type="number" step="any" min="0" value="${esc(rec && rec.price || it.price || "")}"></div>
       <div class="row"><button class="mini primary" data-act="save" data-key="${esc(key)}">Save trade</button><button class="mini" data-act="cancel">Cancel</button><span class="note" id="f-msg"></span></div>
     </div>` : "";
+  const tx = isRealItem && it.side === "SELL" && it.tax && !it.cash ? it.tax : null;
+  const taxLine = tx ? `<span class="det">${Math.abs(tx.gain) < 0.5 ? "No gain or loss to tax."
+    : tx.gain < 0 ? `Estimated capital loss ${money(-tx.gain)}.`
+    : `Estimated gain ${money(tx.gain)}: ${tx.short_gain > 0.5 ? `<b>${money(tx.short_gain)} on ${num(tx.short_units)} units held under 12 months, taxed in full</b>` : "no short-term gain"}${tx.long_gain > 0.5 ? `, ${money(tx.long_gain)} long-term (50% discount)` : ""}.`} Parcels with the least tax are sold first; keep this record for your tax return.</span>` : "";
   return `<li class="order"><span class="side ${it.side}">${it.side === "BUY" ? "Buy" : "Sell"}</span>
-    <span class="tic">${etf(it.ticker)}</span><span class="amt">${money(value)}</span><span class="det">${esc(det)}</span>
+    <span class="tic">${etf(it.ticker)}</span><span class="amt">${money(value)}</span><span class="det">${esc(det)}</span>${taxLine}
     ${opts.readonly ? "" : `<div class="act">${status}${actions}</div>`}${form}</li>`;
 }
 
@@ -1233,9 +1413,9 @@ function renderOrders(s, bk, ad) {
 
   const tickers = (s.universe || (s.rankings || []).map((r) => ({ ticker: r.ticker, theme: r.theme }))).map((u) => `<option value="${esc(u.ticker)}">${esc(u.ticker)} (${esc(u.theme)})</option>`).join("");
   const mine = TRADES.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((t) => `<tr>
-      <td>${esc(dayName(t.date))}</td><td>${t.status === "skipped" ? `<span class="chip skip">Skipped</span>` : t.side === "DEPOSIT" ? `<span class="chip done">Money in</span>` : t.side === "WITHDRAW" ? `<span class="chip skip">Money out</span>` : `<span class="side ${t.side}">${t.side === "BUY" ? "Buy" : "Sell"}</span>`}</td>
-      <td class="t">${t.ticker ? esc(t.ticker) : "Cash"}</td><td class="r">${t.status === "done" && t.units ? num(t.units) : ""}</td><td class="r">${t.status === "done" && t.price ? money(t.price, 2) : ""}</td>
-      <td class="r">${t.status !== "done" ? "" : t.amount ? money(t.amount) : money(t.units * t.price)}</td><td class="hide-sm">${t.amount ? esc(t.note || "") : STATE.universe && !STATE.universe.some((u) => u.ticker === t.ticker) ? `<span class="tag below">Unknown ETF, not counted</span>` : t.order_key ? "From an order" : "Your own"}</td>
+      <td>${esc(dayName(t.date))}</td><td>${t.status === "skipped" ? `<span class="chip skip">Skipped</span>` : t.side === "DEPOSIT" ? `<span class="chip done">Money in</span>` : t.side === "WITHDRAW" ? `<span class="chip skip">Money out</span>` : t.side === "DIST" ? `<span class="chip done">Distribution</span>` : `<span class="side ${t.side}">${t.side === "BUY" ? "Buy" : "Sell"}</span>`}</td>
+      <td class="t">${t.ticker ? esc(t.ticker) : "Cash"}</td><td class="r">${t.status === "done" && t.units && t.side !== "DIST" ? num(t.units) : ""}</td><td class="r">${t.status === "done" && t.price && t.side !== "DIST" ? money(t.price, 2) : ""}</td>
+      <td class="r">${t.status !== "done" ? "" : t.amount ? money(t.amount, t.side === "DIST" ? 2 : 0) : money(t.units * t.price)}</td><td class="hide-sm">${t.side === "DIST" ? (t.units > 0 ? `Reinvested: ${num(t.units)} units` : "Paid as cash") : t.amount ? esc(t.note || "") : STATE.universe && !STATE.universe.some((u) => u.ticker === t.ticker) ? `<span class="tag below">Unknown ETF, not counted</span>` : t.order_key ? "From an order" : "Your own"}</td>
       <td><button class="mini" data-act="del" data-id="${esc(t.id)}">Delete</button></td></tr>`).join("");
 
   $("#orders").innerHTML = `${ticket}
@@ -1251,7 +1431,7 @@ function renderOrders(s, bk, ad) {
         <div><label for="m-units">Units</label><input id="m-units" type="number" step="any" min="0"></div>
         <div><label for="m-price">Price per unit</label><input id="m-price" type="number" step="any" min="0"></div>
       </div><div class="row" style="margin-top:12px"><button class="btn" data-act="manual">Save trade</button></div><div class="msg" id="m-msg" role="status"></div></div></section>
-    <section><h2>Your trade record${ih("trades")}</h2>${ib("trades")}<p class="sub">${bk.count} trade${bk.count === 1 ? "" : "s"} recorded. Your cash is the money you've put in (${money(bk.contributed)}), minus purchases, plus sales. Add money from the Overview.</p>
+    <section><h2>Your trade record${ih("trades")}</h2>${ib("trades")}<p class="sub">${bk.count} trade${bk.count === 1 ? "" : "s"} recorded. Your cash is the money you've put in (${money(bk.contributed)}), minus purchases, plus sales and distributions. Add money from the Overview; record distributions in Holdings.</p>
       <div class="panel scroll"><table><thead><tr><th>Date</th><th>Side</th><th>ETF</th><th class="r">Units</th><th class="r">Price</th><th class="r">Value</th><th class="hide-sm">Source</th><th></th></tr></thead>
       <tbody>${mine || `<tr><td colspan="8">Nothing recorded yet.</td></tr>`}</tbody></table></div></section>`;
 }
@@ -1309,19 +1489,19 @@ $("#orders").addEventListener("click", async (e) => {
 });
 
 /* ---------- holdings ---------- */
-function taxTag(days, longFrom) {
-  return days >= 365 ? `<span class="tag long">Long-term</span>` : `<span class="tag short">Short-term until ${esc(dateLong(longFrom))}</span>`;
+function taxTag(long, longFrom) {
+  return long ? `<span class="tag long">Long-term</span>` : `<span class="tag short">Short-term until ${esc(dateLong(longFrom))}</span>`;
 }
 function renderHoldings(s, bk) {
   const today = sydParts().date;
   const your = bk.holdings.map((x) => {
-    const lots = x.lots; const shortL = lots.filter((l) => l.days < 365);
-    const tag = shortL.length ? taxTag(shortL[0].days, shortL.map((l) => l.longFrom).sort()[0]) : `<span class="tag long">Long-term</span>`;
+    const lots = x.lots; const shortL = lots.filter((l) => !l.long);
+    const tag = shortL.length ? taxTag(false, shortL.map((l) => l.longFrom).sort()[0]) + (shortL.length < lots.length ? ` <span class="tag long">${lots.length - shortL.length} long-term</span>` : "") : `<span class="tag long">Long-term</span>`;
     return `<tr><td><div class="t">${etf(x.ticker)}</div><div class="th">${lots.length} parcel${lots.length === 1 ? "" : "s"}</div><div style="margin-top:4px">${tag}</div></td>
       <td class="r hide-sm">${num(x.units)}</td><td class="r">${money(x.value)}<div class="th">${num(x.units)} at ${money(x.price, 2)}</div></td>
-      <td class="r ${cls(x.gain)}">${signed$(x.gain)}<div class="th">${pct(x.cost ? x.gain / x.cost : null)}</div></td></tr>`;
+      <td class="r ${cls(x.gain)}">${signed$(x.gain)}<div class="th">${pct(x.cost ? x.gain / x.cost : null)}</div>${x.dists > 0.005 ? `<div class="th">+ ${money(x.dists)} distributions</div>` : ""}</td></tr>`;
   }).join("");
-  const real = bk.realised.slice().reverse().slice(0, 20).map((r) => `<tr><td>${esc(dayName(r.date))}</td><td class="t">${esc(r.ticker)}</td><td class="r ${cls(r.gain)}">${signed$(r.gain)}</td><td class="r">${r.days} days</td><td>${r.days >= 365 ? `<span class="tag long">Discount applies</span>` : `<span class="tag short">Taxed in full</span>`}</td></tr>`).join("");
+  const real = bk.realised.slice().reverse().slice(0, 20).map((r) => `<tr><td>${esc(dayName(r.date))}</td><td class="t">${esc(r.ticker)}</td><td class="r ${cls(r.gain)}">${signed$(r.gain)}</td><td class="r">${r.days} days</td><td>${r.long ? `<span class="tag long">Discount applies</span>` : `<span class="tag short">Taxed in full</span>`}</td></tr>`).join("");
 
   const paper = (title, sub, S, showRank) => {
     const v = S.view || { equity: START, cash: START, holdings: [] };
@@ -1331,7 +1511,7 @@ function renderHoldings(s, bk) {
         <td class="r">${money(toAmt(x.value))}<div class="bar" aria-hidden="true"><i style="width:${Math.min(100, x.weight * 100).toFixed(1)}%"></i></div></td>
         <td class="r">${(x.weight * 100).toFixed(1)}%</td>
         <td class="r ${cls(x.gain)}">${signed$(toAmt(x.gain))}<div class="th">${pct(x.cost ? x.gain / x.cost : null)}</div></td>
-        <td class="hide-sm">${days == null ? "" : `${days} days<div class="th">${days >= 365 ? "Long-term" : "Short-term until " + esc(dateLong(addDays(x.since, 366)))}</div>`}</td></tr>`;
+        <td class="hide-sm">${days == null ? "" : `${days} days<div class="th">${isLongTerm(x.since, today) ? "Long-term" : "Short-term until " + esc(dateLong(longTermFrom(x.since)))}</div>`}</td></tr>`;
     }).join("");
     return `<section><h2>${esc(title)}${ih(showRank ? "paperB" : "paperA")}</h2>${ib(showRank ? "paperB" : "paperA")}<p class="sub">${esc(sub)}</p><div class="panel scroll"><table>
       <thead><tr><th>ETF</th><th class="r">Value</th><th class="r">Share</th><th class="r">Gain</th><th class="hide-sm">Held</th></tr></thead>
@@ -1348,11 +1528,67 @@ function renderHoldings(s, bk) {
       <div class="panel scroll"><table><thead><tr><th>ETF and tax status</th><th class="r hide-sm">Units</th><th class="r">Value</th><th class="r">Gain</th></tr></thead>
       <tbody>${your || `<tr><td colspan="4">Nothing recorded yet. Use “I did this” on an order.</td></tr>`}${bk.count ? `<tr><td><div class="t">Cash</div></td><td class="hide-sm"></td><td class="r">${money(bk.cash)}</td><td></td></tr>` : ""}</tbody></table></div></section>
     ${real ? `<section><h2>Your realised gains${ih("realised")}</h2>${ib("realised")}<div class="panel scroll"><table><thead><tr><th>Sold</th><th>ETF</th><th class="r">Gain</th><th class="r">Held</th><th>Tax</th></tr></thead><tbody>${real}</tbody></table></div></section>` : ""}
+    ${distSection(bk)}
     ${paper("If you followed every recommendation (Strategy B)", "The imaginary portfolio, scaled to your amount. Trend-following, checked weekly.", s.B, true)}
     ${paper("Strategy A (paper only, no alerts)", "Daily dip-buying, kept only as a comparison.", s.A, false)}
     <section><h2>Paper trade log${ih("log")}</h2>${ib("log")}<div class="panel scroll"><table><thead><tr><th>Date</th><th>Strategy</th><th>Side</th><th>ETF</th><th class="r">Value</th></tr></thead>
       <tbody>${all || `<tr><td colspan="5">No trades yet.</td></tr>`}</tbody></table></div></section>`;
 }
+
+/* ---------- distributions ---------- */
+let DIST_FORM = null;   // "new" or the key of a published distribution being confirmed
+const distKey = (d) => `${d.ticker}|${d.ex || d.pay}`;
+function distSection(bk) {
+  const today = sydParts().date;
+  const held = bk.holdings.map((h) => h.ticker);
+  const form = (d) => {
+    const isNew = !d;
+    const tick = isNew ? `<div><label for="d-tic">ETF</label><select id="d-tic">${held.map((k) => `<option>${esc(k)}</option>`).join("")}</select></div>` : "";
+    const date = isNew ? today : (d.rec ? d.rec.date : (d.pay && d.pay <= today ? d.pay : d.ex));
+    return `<div class="recform">${tick}
+      <div><label for="d-date">${isNew ? "Date paid" : "Date paid (or ex-date)"}</label><input id="d-date" type="date" value="${esc(date)}" max="${today}"></div>
+      <div><label for="d-amt">Amount received ($)</label><input id="d-amt" type="number" step="any" min="0" value="${esc(d ? (d.rec ? d.rec.amount : (d.estimate || 0).toFixed(2)) : "")}"></div>
+      <div><label for="d-units">Units reinvested (if on a reinvestment plan)</label><input id="d-units" type="number" step="any" min="0" value="${esc(d && d.rec && d.rec.units ? d.rec.units : "")}"></div>
+      <div class="row"><button class="mini primary" data-dact="save" data-dkey="${esc(d ? distKey(d) : "new")}">Save</button><button class="mini" data-dact="cancel">Cancel</button>${d && d.rec ? `<button class="mini" data-dact="del" data-id="${esc(d.rec.id)}">Delete record</button>` : ""}<span class="note" id="d-msg"></span></div></div>`;
+  };
+  const rows = bk.dists.slice(0, 30).map((d) => {
+    const k = distKey(d);
+    const status = d.status === "recorded" ? `<span class="chip done">${d.drp > 0 ? "Reinvested" : "Recorded"}</span>` : `<span class="chip open">Estimated</span>`;
+    const act = d.rec ? `<button class="mini" data-dact="edit" data-dkey="${esc(k)}">Change</button>`
+      : `<button class="mini primary" data-dact="edit" data-dkey="${esc(k)}">Record</button>`;
+    return `<tr><td><div class="t">${etf(d.ticker)}</div>${esc(dateLong(d.ex || d.pay))}<div class="th">${d.ex ? "ex-date" : "paid"}${d.ex && d.pay ? `<br>paid ${esc(dateLong(d.pay))}` : ""}</div></td>
+      <td class="r">${money(d.amount, 2)}<div class="th" style="white-space:nowrap">${d.per_unit ? `${num(d.units, 0)} × ${money(d.per_unit, 4)}` : ""}</div>${d.drp > 0 ? `<div class="th">${num(d.drp)} new units</div>` : ""}</td><td>${status}<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">${act}</div></td></tr>
+      ${DIST_FORM === k ? `<tr><td colspan="3">${form(d)}</td></tr>` : ""}`;
+  }).join("");
+  if (!rows && !held.length) return "";
+  return `<section><h2>Distributions${ih("dists")}</h2>${ib("dists")}
+    <p class="sub">${bk.dists.length ? `${money(bk.distTotal)} received so far, counted in your cash${bk.dists.some((d) => d.drp > 0) ? " (or as new units where reinvested)" : ""}.` : "None yet."} Estimated ones use the published amount per unit and the units you held the day before the ex-date; record what actually arrived to replace the estimate.</p>
+    <div class="panel scroll"><table><thead><tr><th>ETF and date</th><th class="r">Amount</th><th>Status</th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="3">No distributions yet for the ETFs you hold.</td></tr>`}</tbody></table>
+    ${held.length ? (DIST_FORM === "new" ? form(null) : `<div class="row" style="margin-top:10px"><button class="mini" data-dact="edit" data-dkey="new">Record another distribution</button></div>`) : ""}</div></section>`;
+}
+$("#holdings").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-dact]"); if (!b) return;
+  const act = b.dataset.dact, key = b.dataset.dkey;
+  try {
+    if (act === "edit") { DIST_FORM = key; render(); const f = $("#d-amt"); if (f) f.focus(); return; }
+    if (act === "cancel") { DIST_FORM = null; render(); return; }
+    if (act === "del") { DIST_FORM = null; await mutateTrades((l) => l.filter((t) => t.id !== b.dataset.id)); return; }
+    if (act === "save") {
+      const bk = book(TRADES, (STATE && STATE.prices) || {});
+      const d = key === "new" ? null : bk.dists.find((x) => distKey(x) === key);
+      const ticker = d ? d.ticker : ($("#d-tic") || {}).value;
+      const date = $("#d-date").value, amount = Number($("#d-amt").value), units = Number($("#d-units").value || 0);
+      const m = $("#d-msg");
+      if (!ticker || !date || date > sydParts().date || !(amount > 0) || units < 0) { m.textContent = "Enter a date (not in the future) and an amount above zero."; return; }
+      b.disabled = true;
+      const rec = { id: d && d.rec ? d.rec.id : newId(), status: "done", side: "DIST", ticker, date, amount, ...(units > 0 ? { units, price: amount / units } : {}),
+                    ...(d && d.ex ? { ex: d.ex } : {}), recorded: new Date().toISOString() };
+      await mutateTrades((l) => l.filter((t) => t.id !== rec.id).concat([rec]));
+      DIST_FORM = null; render();
+    }
+  } catch (err) { banner("err", "Couldn't save the distribution", err.message); }
+});
 
 /* ---------- rankings ---------- */
 function renderRankings(s) {
@@ -1391,18 +1627,35 @@ $("#save").addEventListener("click", async () => {
   try { await gh("/gists/" + encodeURIComponent(gist)); m.className = "msg ok"; m.textContent = "Saved. Your data is loading."; await load(); }
   catch (e) { m.className = "msg bad"; m.textContent = e.message; }
 });
+$("#drepo").value = store.get("datarepo");
+$("#dtoken").value = store.get("dtoken");
+$("#saveRepo").addEventListener("click", async () => {
+  const repo = $("#drepo").value.trim().replace(/^https:\/\/github.com\//, "").replace(/\.git$/, "").replace(/\/$/, "");
+  const tok = $("#dtoken").value.trim();
+  const m = $("#repoMsg");
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !tok) { m.className = "msg bad"; m.textContent = "Enter the repository as your-username/etf-data, and the token."; return; }
+  m.className = "msg"; m.textContent = "Checking…";
+  try {
+    const info = await gh(`/repos/${repo}`, { allow404: true }, tok);
+    if (!info) { m.className = "msg bad"; m.textContent = "Repository not found. Check the name, and that the token was given access to it."; return; }
+    if (info.private === false) { m.className = "msg bad"; m.textContent = "That repository is public. Make it private on GitHub (Settings, Danger zone, Change visibility) before storing your data there."; return; }
+    store.set("datarepo", repo); store.set("dtoken", tok); $("#drepo").value = repo;
+    const st = await gh(repoPath("state.json") + "?ref=main", { allow404: true }, tok);
+    m.className = "msg ok";
+    m.textContent = st ? "Saved. Your data is loading." : "Saved. The engine hasn't copied your data here yet: it does that on its next run after you add the DATA_REPO and DATA_TOKEN secrets.";
+    await load();
+  } catch (e) { m.className = "msg bad"; m.textContent = e.message; }
+});
 $("#forget").addEventListener("click", () => {
-  store.del("gist"); store.del("token"); $("#gist").value = ""; $("#token").value = "";
-  $("#saveMsg").className = "msg"; $("#saveMsg").textContent = "Removed from this device.";
+  ["gist", "token", "datarepo", "dtoken"].forEach((k) => store.del(k));
+  ["#gist", "#token", "#drepo", "#dtoken"].forEach((k) => { $(k).value = ""; });
+  $("#saveMsg").className = "msg"; $("#saveMsg").textContent = ""; $("#repoMsg").className = "msg"; $("#repoMsg").textContent = "Removed from this device.";
   STATE = null; renderEmpty();
 });
 
 /* Merge a change into settings.json, keeping everything else (amount, mode). */
 async function saveSettings(patch) {
-  const g = await gh(gistPath());
-  const cur = (await readJson(g.files, "settings.json")) || {};
-  CFG = { ...cur, ...patch, updated: new Date().toISOString() };
-  await gh(gistPath(), { method: "PATCH", body: JSON.stringify({ files: { "settings.json": { content: JSON.stringify(CFG) } } }) });
+  CFG = await mutateFile("settings.json", (cur) => ({ ...(cur || {}), ...patch, updated: new Date().toISOString() }), {});
   syncModeUI();
   return CFG;
 }
@@ -1415,7 +1668,7 @@ function syncModeUI() {
 $("#saveMode").addEventListener("click", async () => {
   const m = $("#modeMsg"); const sel = document.querySelector('input[name="mode"]:checked');
   if (!sel) { m.className = "msg bad"; m.textContent = "Choose a mode."; return; }
-  if (!store.get("gist") || !store.get("token")) { m.className = "msg bad"; m.textContent = "Connect your Gist above first."; return; }
+  if (!DATA.ok()) { m.className = "msg bad"; m.textContent = "Connect your data above first."; return; }
   if (sel.value === "real" && !confirm(`Switch to real money with ${money(CAPITAL)}? Check the investment amount below matches the cash you've set aside, then place the orders it gives you in Betashares.`)) return;
   m.className = "msg"; m.textContent = "Saving…";
   try {
@@ -1430,7 +1683,7 @@ $("#saveCapital").addEventListener("click", async () => {
   const m = $("#capitalMsg");
   const v = Number(String($("#capital").value).replace(/[$,\s]/g, ""));
   if (!isFinite(v) || v < 500 || v > 5000000) { m.className = "msg bad"; m.textContent = "Enter an amount between $500 and $5,000,000."; return; }
-  if (!store.get("gist") || !store.get("token")) { m.className = "msg bad"; m.textContent = "Connect your Gist above first."; return; }
+  if (!DATA.ok()) { m.className = "msg bad"; m.textContent = "Connect your data above first."; return; }
   m.className = "msg"; m.textContent = "Saving…";
   try {
     await saveSettings({ capital: Math.round(v) });
@@ -1440,7 +1693,6 @@ $("#saveCapital").addEventListener("click", async () => {
   } catch (e) { m.className = "msg bad"; m.textContent = e.message; }
 });
 
-/* ---------- push alerts ---------- */
 /* ---------- push alerts ---------- */
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
@@ -1484,12 +1736,11 @@ async function updatePushState() {
   } catch (e) { el.textContent = "Alerts are off for this device."; }
 }
 async function saveSubscription(entry, remove = false) {
-  const g = await gh("/gists/" + encodeURIComponent(store.get("gist")));
-  let list = (await readJson(g.files, "subscriptions.json")) || [];
-  list = list.filter((x) => x.endpoint !== entry.endpoint);
-  if (!remove) list.push(entry);
-  await gh("/gists/" + encodeURIComponent(store.get("gist")), { method: "PATCH",
-    body: JSON.stringify({ files: { "subscriptions.json": { content: JSON.stringify(list) } } }) });
+  const list = await mutateFile("subscriptions.json", (l) => {
+    const x = (Array.isArray(l) ? l : []).filter((y) => y.endpoint !== entry.endpoint);
+    if (!remove) x.push(entry);
+    return x;
+  }, []);
   return list.length;
 }
 $("#enablePush").addEventListener("click", async () => {
@@ -1499,7 +1750,7 @@ $("#enablePush").addEventListener("click", async () => {
     m.textContent = isIOS && !standalone ? "On iPhone: in Safari tap Share, then Add to Home Screen. Open Signals from the new icon and tap Turn on alerts again." : "This browser can't receive alerts.";
     return;
   }
-  if (!store.get("gist") || !store.get("token")) { m.className = "msg bad"; m.textContent = "Connect your Gist above first."; return; }
+  if (!DATA.ok()) { m.className = "msg bad"; m.textContent = "Connect your data above first."; return; }
   if (!STATE || !STATE.public_key) { m.className = "msg bad"; m.textContent = "The engine hasn't run yet. On GitHub, open Actions, choose Signal engine and Run workflow (check now), then tap Refresh."; return; }
   try {
     const perm = await Notification.requestPermission();
@@ -1524,7 +1775,7 @@ $("#disablePush").addEventListener("click", async () => {
     if (!sub) { m.textContent = "Alerts were already off on this device."; return; }
     const endpoint = sub.endpoint;
     await sub.unsubscribe();
-    if (store.get("gist") && store.get("token")) await saveSubscription({ endpoint }, true);
+    if (DATA.ok()) await saveSubscription({ endpoint }, true);
     m.className = "msg ok"; m.textContent = "Alerts are off for this device.";
   } catch (e) { m.className = "msg bad"; m.textContent = "Couldn't turn off alerts: " + (e.message || e); }
   updatePushState();
