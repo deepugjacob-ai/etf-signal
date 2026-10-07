@@ -162,6 +162,12 @@ input[type=text],input[type=password],input[type=number],input[type=date],select
 .msg.ok{color:var(--buy)} .msg.bad{color:var(--sell)}
 .note{font-size:.88rem;color:var(--muted)}
 [hidden]{display:none!important}
+button.info{all:unset;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;
+  border:1.5px solid var(--muted);color:var(--muted);font-size:.72rem;font-weight:700;font-style:italic;font-family:Georgia,serif;margin-left:8px;vertical-align:middle;flex:none}
+button.info[aria-expanded="true"]{background:var(--navy);border-color:var(--navy);color:var(--surface)}
+button.info:focus-visible{outline:3px solid var(--navy);outline-offset:2px}
+.infobox{background:var(--ground);border-left:3px solid var(--navy);border-radius:8px;padding:10px 12px;margin:6px 0 12px;font-size:.9rem;font-weight:400;color:var(--ink);line-height:1.5}
+.odds td,.odds th{padding:7px 6px}
 .modebar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 14px;margin-bottom:16px}
 .modebar .seg{margin:0}
 .modebar .what{font-size:.86rem;color:var(--muted);flex:1 1 220px}
@@ -214,7 +220,7 @@ button.etf:focus-visible{outline:3px solid var(--navy);outline-offset:2px;border
     <div data-panel="rankings" hidden><div id="rankings"></div></div>
     <div data-panel="settings" hidden>
       <section>
-        <h2>Connect your data</h2>
+        <h2>Connect your data<button class="info" data-info="set-connect" aria-label="What is this section?" aria-expanded="false">i</button></h2><div class="infobox" data-infobox="set-connect" hidden></div>
         <p class="sub">The engine saves its results to your private GitHub Gist. Enter the same Gist ID and token you saved as GitHub secrets. They stay on this device only.</p>
         <div class="panel">
           <div class="field">
@@ -235,7 +241,7 @@ button.etf:focus-visible{outline:3px solid var(--navy);outline-offset:2px;border
         </div>
       </section>
       <section>
-        <h2>Live updates (optional)</h2>
+        <h2>Live updates (optional)<button class="info" data-info="set-live" aria-label="What is this section?" aria-expanded="false">i</button></h2><div class="infobox" data-infobox="set-live" hidden></div>
         <p class="sub">GitHub's own timer often skips runs. With an Actions token here, Refresh asks the engine for fresh prices during ASX hours (about a minute). Use a fine-grained token limited to your etf-signal repository with “Actions: read and write” permission.</p>
         <div class="panel">
           <div class="field">
@@ -251,7 +257,7 @@ button.etf:focus-visible{outline:3px solid var(--navy);outline-offset:2px;border
         </div>
       </section>
       <section>
-        <h2>Trading mode</h2>
+        <h2>Trading mode<button class="info" data-info="set-mode" aria-label="What is this section?" aria-expanded="false">i</button></h2><div class="infobox" data-infobox="set-mode" hidden></div>
         <p class="sub">In paper mode the tool only tracks a $10,000 paper portfolio. In real-money mode it also gives you your own orders, sized from what you have actually recorded buying and selling, and your alerts become those orders.</p>
         <div class="panel">
           <div class="row" role="radiogroup" aria-label="Trading mode">
@@ -264,7 +270,7 @@ button.etf:focus-visible{outline:3px solid var(--navy);outline-offset:2px;border
         </div>
       </section>
       <section>
-        <h2>Starting amount</h2>
+        <h2>Starting amount<button class="info" data-info="set-amount" aria-label="What is this section?" aria-expanded="false">i</button></h2><div class="infobox" data-infobox="set-amount" hidden></div>
         <p class="sub">Only used until you log money in and out on the Overview (“Add money”). After that, the tool uses what you've actually put in, on the days you put it in.</p>
         <div class="panel">
           <div class="field">
@@ -277,7 +283,7 @@ button.etf:focus-visible{outline:3px solid var(--navy);outline-offset:2px;border
         </div>
       </section>
       <section>
-        <h2>Alerts on this device</h2>
+        <h2>Alerts on this device<button class="info" data-info="set-alerts" aria-label="What is this section?" aria-expanded="false">i</button></h2><div class="infobox" data-infobox="set-alerts" hidden></div>
         <p class="sub" id="pushState">Checking…</p>
         <div class="panel">
           <div class="row">
@@ -452,6 +458,80 @@ function adherence(s) {
            slip: diffs.length ? diffs.reduce((a, b) => a + b, 0) / diffs.length : null };
 }
 
+/* ---------- info buttons: what each section does ---------- */
+const INFO = {
+  market: "The overall trend of the Australian share market (the ASX 200), worked out from its 50- and 200-day averages. In an uptrend or sideways market, Strategy B can hold up to 5 ETFs; in a downtrend, at most 2, with the rest kept in cash. Prices are about 20 minutes delayed.",
+  mode: "Paper: orders are for an imaginary portfolio scaled to your amount, so you can watch without risk. Real money: orders are sized from what you've actually recorded buying and your real cash. Your recorded trades are tracked in both modes.",
+  invest: "Enter how much you want to invest today. It splits the money across the ETFs Strategy B holds right now, by the strategy's weights, giving more to picks you hold less of. With whole units, it rounds down and then uses the leftover. Each pick shows how ETFs in a similar position did historically. It follows the strategy's rules; it isn't a prediction.",
+  holdings: "What you've actually bought for the strategy, from your recorded trades: units, what you paid, value now, gain since you bought and the latest day's change. Use Add money and Take money out to log cash you move in or out, so your gain is measured against what you've put in.",
+  core: "Your investments outside the strategy: your own ETFs and the Betashares managed portfolio. They're tracked separately so they don't affect the strategy comparisons. Figures marked ‘estimated’ came from your statements and Betashares screen; correct them in Holdings with the exact numbers from the app.",
+  tiles: "A quick summary. ‘If you followed every recommendation’ is the imaginary portfolio that places every order. ‘Your portfolio’ is your real money. ‘Index yardstick’ is a simple mix of 40% STW, 40% IVV and 20% VEU. Once you log deposits, all three use the same money on the same days. ‘Held under 12 months’ counts parcels whose gains would be taxed in full.",
+  cmp: "Your real portfolio against the two yardsticks, each fed with your deposits on the same days, so the comparison is fair. The dotted grey line steps up with each deposit: being above it means you're ahead of the money you've put in.",
+  yard: "How the imaginary portfolios have done since paper trading started: every Strategy B recommendation, Strategy A (dip-buying, kept for comparison) and the index mix. Shown for your amount, after trading costs.",
+  donuts: "How the money is split across ETFs: the recommended portfolio on the left, and your real holdings and cash on the right.",
+  alerts: "The notifications sent to your devices: weekly orders (Fridays from 3pm), market trend changes, real-money order updates, and any problem with a check.",
+  orders: "Strategy B's orders from its latest weekly check (Fridays from 3pm), scaled to your amount. After you trade in Betashares, tap ‘I did this’ and enter what you actually paid, or ‘Skipped’ if you didn't follow it.",
+  realorders: "Your own orders in real-money mode: what to buy or sell so your recorded holdings match Strategy B, sized from your real cash. Tap Recalculate after recording trades or adding money.",
+  paperorders: "The orders for the imaginary portfolio the strategy is measured against. There's nothing to do here in real-money mode.",
+  earlier: "Every earlier order and whether you followed it. Price difference: positive means you paid more (or sold for less) than suggested.",
+  record: "For trades that weren't in an order: buying earlier or later than suggested, or a different ETF.",
+  trades: "Everything you've recorded: buys, sells, skipped orders, and money in or out. To fix a mistake, delete the entry and record it again.",
+  stratholdings: "Your recorded strategy holdings, with each parcel's tax status. A gain on a parcel held under 12 months is taxed in full; after 12 months, the 50% capital gains discount applies.",
+  realised: "Gains and losses on what you've sold, how long you held each parcel, and whether the 50% discount applies.",
+  paperB: "The imaginary portfolio that follows every recommendation, scaled to your amount, with how long it has held each ETF.",
+  paperA: "Strategy A buys short dips and sells on the bounce. In testing it made about 0–1% a year after costs, so it runs silently as a comparison only.",
+  log: "Every trade the two imaginary portfolios have made.",
+  rankings: "ETFs that beat cash and sit above their 200-day trend line, ranked by momentum: their average return over 3, 6 and 12 months. Strategy B buys from the top: at most 5 ETFs (2 in a downtrend), no more than 2 per theme, and only above 101% of the trend line. ‘Theme full’ means it already holds 2 from that theme.",
+  odds: "How often ETFs in a similar position (similar momentum and distance from their trend line) were higher after 1 month, 3 months and 1 year. Based on weekly snapshots of liquid ASX ETFs since 2012, dividends included. ‘Typical’ is the middle result; ‘bad case’ is the 1-in-10 worst. History doesn't guarantee the future.",
+  chart: "Price over the chosen period. For the strategy's ETFs it also shows the 200-day trend line, the buy line (1% above it) and the sell line (2% below it). A dotted line marks your average cost if you hold it.",
+  "set-connect": "Links this device to your private Gist, where the engine saves its results. Enter it once on each device; it stays on that device only.",
+  "set-live": "Optional. With a token here, Refresh asks the engine for fresh prices during ASX hours instead of waiting for the next scheduled check.",
+  "set-mode": "Paper or real money. Real money sizes your orders from your recorded holdings and cash. You can also switch on the Overview.",
+  "set-amount": "Only used until you log money in and out with Add money on the Overview. After that, the tool uses your actual deposits.",
+  "set-alerts": "Turns notifications on or off for this device. On iPhone, open Signals from the Home Screen icon first.",
+};
+const INFO_OPEN = new Set();
+const ih = (k) => `<button class="info" data-info="${k}" aria-label="What is this section?" aria-expanded="${INFO_OPEN.has(k)}">i</button>`;
+const ib = (k) => `<div class="infobox" data-infobox="${k}" ${INFO_OPEN.has(k) ? "" : "hidden"}>${esc(INFO[k] || "")}</div>`;
+document.querySelectorAll("[data-infobox]").forEach((b) => { if (!b.textContent) b.textContent = INFO[b.dataset.infobox] || ""; });
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-info]"); if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  const k = b.dataset.info; const open = !INFO_OPEN.has(k);
+  open ? INFO_OPEN.add(k) : INFO_OPEN.delete(k);
+  document.querySelectorAll(`[data-infobox="${k}"]`).forEach((x) => { x.hidden = !open; });
+  document.querySelectorAll(`button[data-info="${k}"]`).forEach((x) => x.setAttribute("aria-expanded", String(open)));
+}, true);
+
+/* ---------- historical odds ---------- */
+let ODDS = null;
+fetch("odds.json", { cache: "no-cache" }).then((r) => r.ok ? r.json() : null).then((d) => { ODDS = d; if (STATE && STATE.B) render(); if (SHEET.k) renderSheet(); }).catch(() => {});
+function oddsFor(k) {
+  if (!ODDS || !CHARTS || !CHARTS.series || !CHARTS.series[k]) return null;
+  const c = CHARTS.series[k].close.filter((v) => v != null);
+  if (c.length < 253) return null;
+  const n = c.length - 1, now = c[n];
+  const score = (now / c[n - 63] + now / c[n - 126] + now / c[n - 252]) / 3 - 1;
+  const sma = c.slice(-200).reduce((a, v) => a + v, 0) / 200, trend = now / sma - 1;
+  const i = ODDS.momentum_bins.findIndex(([a, b]) => score >= a && score < b);
+  const j = ODDS.trend_bins.findIndex(([a, b]) => trend >= a && trend < b);
+  if (i < 0 || j < 0) return null;
+  const cell = ODDS.cells[`${i},${j}`] || {}, mom = ODDS.by_momentum[String(i)] || {};
+  const pick = (h) => cell[h] || mom[h] || null;
+  return { score, trend, mLabel: ODDS.momentum_bins[i][2], tLabel: ODDS.trend_bins[j][2], h: { "1m": pick("1m"), "3m": pick("3m"), "1y": pick("1y") }, any: ODDS.any };
+}
+function oddsTable(k) {
+  const o = oddsFor(k);
+  if (!o) return `<p class="chart-note">Historical odds need about a year of price history for this ETF.</p>`;
+  const row = (label, h) => { const x = o.h[h], a = o.any[h];
+    return `<tr><td>${label}</td><td class="r">${x ? (x.up * 100).toFixed(0) + "%" : "–"}<div class="th">any ETF ${a ? (a.up * 100).toFixed(0) + "%" : "–"}</div></td>
+      <td class="r ${x ? cls(x.median) : ""}">${x ? pct(x.median) : "–"}</td><td class="r ${x ? cls(x.bad) : ""}">${x ? pct(x.bad) : "–"}</td></tr>`; };
+  return `<p class="note" style="margin:4px 0 8px">${esc(k)} now has <b>${esc(o.mLabel)}</b> momentum and is <b>${esc(o.tLabel)}</b>. ETFs in that position were:</p>
+    <div class="scroll"><table class="odds"><thead><tr><th>After</th><th class="r">Higher</th><th class="r">Typical</th><th class="r">Bad case (1 in 10)</th></tr></thead>
+    <tbody>${row("1 month", "1m")}${row("3 months", "3m")}${row("1 year", "1y")}</tbody></table></div>
+    <p class="chart-note">A dash means too few past examples to say. History, not a forecast.</p>`;
+}
+
 /* ---------- ETF price sheet ---------- */
 let CHARTS = null;
 const etf = (k) => CHARTS && CHARTS.series && CHARTS.series[k] ? `<button class="etf" data-etf="${esc(k)}" aria-label="Show ${esc(k)} price chart">${esc(k)}</button>` : esc(k);
@@ -507,8 +587,10 @@ function renderSheet() {
       return `<div class="panel" style="padding:12px;margin-bottom:10px"><b>Your position:</b> ${num(h.units)} units at ${money(h.cost / h.units, 2)} average, worth ${money(v)}.
         <span class="${cls(g)}">${signed$(g)} (${pct(g / h.cost)}) since bought</span>${st.dayChg != null ? `, <span class="${cls(st.dayChg)}">${signed$(st.dayChg)} ${st.dayLabel === "Today" ? "today" : "on " + esc(st.dayLabel)}</span>` : ""}.</div>`; })()}
     <p class="note" style="margin:0">${esc(status)}.</p>
+    <div style="display:flex;align-items:center;margin-top:12px"><b>Price chart</b>${ih("chart")}</div>${ib("chart")}
     <div class="seg" role="group" aria-label="Chart period">${ranges.map(([n, l]) => `<button data-range="${n}" aria-pressed="${SHEET.range === n}">${l}</button>`).join("")}</div>
-    ${priceChart(k, SHEET.range)}${intraChart}</div>`;
+    ${priceChart(k, SHEET.range)}${intraChart}
+    <h3 style="margin-top:18px">Historical odds${ih("odds")}</h3>${ib("odds")}${oddsTable(k)}</div>`;
   bg.querySelector("#sheetClose").addEventListener("click", closeSheet);
   bg.querySelectorAll("[data-range]").forEach((b) => b.addEventListener("click", () => { SHEET.range = +b.dataset.range; renderSheet(); }));
   bg.querySelector("#sheetClose").focus();
@@ -607,7 +689,7 @@ function positionStats(k, units, lots) {
   return { now, dayLabel, dayChg };
 }
 function positionsCard(s, bk) {
-  if (!bk.count) return `<section class="panel" style="margin-bottom:16px"><h3>Your holdings</h3>
+  if (!bk.count) return `<section class="panel" style="margin-bottom:16px"><h3>Your holdings${ih("holdings")}</h3>${ib("holdings")}
     <p class="note" style="margin:0 0 10px">${bk.hasFlows ? `You've put in ${money(bk.contributed)} and haven't recorded any purchases yet.` : "You haven't recorded any purchases yet."} After you buy in Betashares, record it in Orders: tap “I did this” on an order, or use “Record another trade”.</p>${moneyControls()}</section>`;
   let invested = 0, worth = 0, dayTotal = 0, dayKnown = false, dayLabel = null;
   const rows = bk.holdings.map((h) => {
@@ -629,7 +711,7 @@ function positionsCard(s, bk) {
   }).join("");
   const gainAll = worth - invested;
   const checked = (s.status || {}).checked;
-  return `<section class="panel" style="margin-bottom:16px"><h3>Your holdings</h3>
+  return `<section class="panel" style="margin-bottom:16px"><h3>Your holdings${ih("holdings")}</h3>${ib("holdings")}
     <ul class="positions">${rows}</ul>
     <div class="postotal"><span>Spent on ETFs <b>${money(invested)}</b></span><span>Now worth <b>${money(worth)}</b></span>
       <span>Gain <b class="${cls(gainAll)}">${signed$(gainAll)} (${pct(invested ? gainAll / invested : null)})</b></span>
@@ -642,7 +724,7 @@ function positionsCard(s, bk) {
 }
 function modeBar() {
   const real = isReal();
-  return `<div class="modebar"><b>Mode</b>
+  return `${ib("mode")}<div class="modebar"><b>Mode</b>${ih("mode")}
     <div class="seg" role="group" aria-label="Trading mode">
       <button data-setmode="paper" aria-pressed="${!real}">Paper</button><button data-setmode="real" aria-pressed="${real}">Real money</button></div>
     <span class="what">${real ? "Orders are sized from what you actually hold and your real cash." : "Orders follow the imaginary portfolio, scaled to your amount. Your recorded trades are still tracked."}</span></div>`;
@@ -714,7 +796,7 @@ function coreCard(s, detailed) {
   const controls = detailed ? coreControls() : "";
   if (!c.has_core) {
     if (!detailed && !(CORE_REC.lots || []).length) return "";
-    return `<section class="panel" style="margin-bottom:16px"><h3>Long-term core</h3><p class="note" style="margin:0 0 10px">${(CORE_REC.lots || []).length ? "Saved. Values appear after the next check (within 15 minutes in ASX hours, or run check now in GitHub Actions)." : "Your investments outside the strategy, tracked separately so they don't affect the strategy comparison. Import the file I gave you, or add holdings below."}</p>${controls}</section>`;
+    return `<section class="panel" style="margin-bottom:16px"><h3>Long-term core${ih("core")}</h3>${ib("core")}<p class="note" style="margin:0 0 10px">${(CORE_REC.lots || []).length ? "Saved. Values appear after the next check (within 15 minutes in ASX hours, or run check now in GitHub Actions)." : "Your investments outside the strategy, tracked separately so they don't affect the strategy comparison. Import the file I gave you, or add holdings below."}</p>${controls}</section>`;
   }
   const groupBlock = (g) => {
     const rows = g.positions.map((p) => `<tr><td><div class="t">${etf(p.ticker)}</div><div class="th">${num(p.units)} units${p.estimated ? ", estimated" : ""}</div></td>
@@ -733,7 +815,7 @@ function coreCard(s, detailed) {
   const chart = detailed && hist.length >= 2 ? legend([["Value", "var(--Y)"], ["Cost", "var(--A)", 1]]) + lineChart([
       { points: hist.map((h) => ({ d: h.d, v: h.C })), color: "var(--A)", dash: "2 4", w: 1.4 },
       { points: hist.map((h) => ({ d: h.d, v: h.V })), color: "var(--Y)", w: 2.6 }], "Core holdings value over time") : "";
-  return `<section class="panel" style="margin-bottom:16px"><h3>Long-term core <span class="note" style="font-weight:400">(separate from the strategy)</span></h3>
+  return `<section class="panel" style="margin-bottom:16px"><h3>Long-term core <span class="note" style="font-weight:400">(separate from the strategy)</span>${ih("core")}</h3>${ib("core")}
     <div class="postotal" style="border-top:0;padding-top:0;margin-top:0"><span>Worth <b>${money(c.value)}</b></span>
       ${c.gain != null ? `<span>Gain <b class="${cls(c.gain)}">${signed$(c.gain)} (${pct(c.cost ? c.gain / c.cost : null)})</b></span>` : ""}
       <span>Latest day <b class="${cls(c.day)}">${signed$(c.day)}</b></span></div>
@@ -890,11 +972,13 @@ function investPlan(s, bk, amount, whole) {
 function investCard(s, bk) {
   if (!INVEST.open) return `<div class="row" style="margin-bottom:16px"><button class="btn" data-inv="open" style="flex:1">Invest now: split new money across today's picks</button></div>`;
   const plan = INVEST.plan;
-  const rows = plan && plan.lines.length ? plan.lines.map((l, i) => `<tr><td><div class="t">${etf(l.k)}</div></td>
+  const oddsLine = (k) => { const o = oddsFor(k); const y = o && (o.h["1y"] || o.h["3m"]); const lab = o && o.h["1y"] ? "1 yr" : "3 mths";
+    return y ? `<div class="th">Similar ETFs: higher after ${lab} ${(y.up * 100).toFixed(0)}% of the time, bad case ${pct(y.bad)}</div>` : ""; };
+  const rows = plan && plan.lines.length ? plan.lines.map((l, i) => `<tr><td><div class="t">${etf(l.k)}</div>${oddsLine(l.k)}</td>
       <td class="r"><input type="number" step="any" min="0" data-inv-u="${i}" value="${l.units}" style="width:4.2em;padding:6px;text-align:right"></td>
       <td class="r"><input type="number" step="any" min="0" data-inv-p="${i}" value="${l.p}" style="width:5em;padding:6px;text-align:right"></td>
       <td class="r">${money(l.cost, 2)}</td></tr>`).join("") : "";
-  return `<section class="panel" style="margin-bottom:16px"><h3>Invest now</h3>
+  return `<section class="panel" style="margin-bottom:16px"><h3>Invest now${ih("invest")}</h3>${ib("invest")}
     <p class="sub" style="margin-bottom:10px">Splits your money across what Strategy B holds today, in line with its weights, and favours the picks you're short of. It isn't a prediction: it follows the strategy's rules.</p>
     <div class="fields" style="grid-template-columns:repeat(2,minmax(0,1fr))">
       <div><label for="inv-amt">Amount (A$)</label><input id="inv-amt" type="number" step="any" min="0" inputmode="decimal" value="${esc(INVEST.amount)}"></div>
@@ -1046,7 +1130,7 @@ function renderOverview(s, bk, ad) {
 
   $("#overview").innerHTML = `
     <section class="hero">
-      <div><div class="label">Market today</div><div class="regime ${esc(s.regime)}">${esc(word)}</div><p>${esc(line)}</p></div>
+      <div><div class="label">Market today${ih("market")}</div>${ib("market")}<div class="regime ${esc(s.regime)}">${esc(word)}</div><p>${esc(line)}</p></div>
       <div class="facts">
         <span>Prices: <strong>${mk.market_open ? "delayed ~20 min, " + esc(when(mk.quote_time)) : "last close " + esc(dayName(mk.last_daily_close))}</strong></span>
         <span>Checked: <strong>${esc(when((s.status || {}).checked))}</strong></span>
@@ -1057,16 +1141,17 @@ function renderOverview(s, bk, ad) {
     ${investCard(s, bk)}
     ${positionsCard(s, bk)}
     ${coreCard(s, false)}
+    <div style="display:flex;align-items:center;margin:0 0 6px"><span class="note">Summary</span>${ih("tiles")}</div>${ib("tiles")}
     <div class="tiles">${tiles}</div>
     <div class="grid2">
-      <section class="panel"><h3>You vs following every recommendation</h3>${cmpChart}</section>
-      <section class="panel"><h3>The yardsticks since ${esc(dayName(s.started))}</h3>${stratChart}<p class="chart-note">Shown for ${money(CAPITAL)}, after a 0.15% cost on every trade.</p></section>
+      <section class="panel"><h3>You vs following every recommendation${ih("cmp")}</h3>${ib("cmp")}${cmpChart}</section>
+      <section class="panel"><h3>The yardsticks since ${esc(dayName(s.started))}${ih("yard")}</h3>${ib("yard")}${stratChart}<p class="chart-note">Shown for ${money(CAPITAL)}, after a 0.15% cost on every trade.</p></section>
     </div>
     <div class="grid2" style="margin-top:12px">
-      <section class="panel"><h3>Where the recommended money is</h3>${donut(recItems, "Recommended allocation")}</section>
+      <section class="panel"><h3>Where the recommended money is${ih("donuts")}</h3>${ib("donuts")}${donut(recItems, "Recommended allocation")}</section>
       <section class="panel"><h3>Where your money is</h3>${bk.count ? donut(yourItems, "Your allocation") : `<p class="chart-note">Appears once you record trades.</p>`}</section>
     </div>
-    <section style="margin-top:26px"><h2>Recent alerts</h2>
+    <section style="margin-top:26px"><h2>Recent alerts${ih("alerts")}</h2>${ib("alerts")}
       <div class="panel">${alerts ? `<ul class="alerts">${alerts}</ul>` : `<p class="note" style="margin:0">No alerts yet.</p>`}</div></section>`;
 }
 
@@ -1108,7 +1193,8 @@ function renderOrders(s, bk, ad) {
 
   const paperTicket = (readonly) => `
     <section class="ticket" aria-labelledby="ordersTitle">
-      <div class="ticket-head"><h2 id="ordersTitle">${readonly ? "Paper portfolio orders" : "Strategy B orders"}</h2><div class="when">${o ? "Weekly check<br>" + esc(when(o.time)) : "No check yet"}</div></div>
+      <div class="ticket-head"><h2 id="ordersTitle">${readonly ? "Paper portfolio orders" : "Strategy B orders"}${ih(readonly ? "paperorders" : "orders")}</h2><div class="when">${o ? "Weekly check<br>" + esc(when(o.time)) : "No check yet"}</div></div>
+      ${ib(readonly ? "paperorders" : "orders").replace('class="infobox"', 'class="infobox" style="margin:0 18px 12px"')}
       <div class="perf" aria-hidden="true"></div>
       ${paperItems.length ? `<ul class="orders">${paperItems.map((it) => orderRow(it, o.date, ad, { readonly })).join("")}</ul>`
         : `<div class="none">No changes this time. Keep holding ${keep.length ? keep.map(esc).join(", ") : "everything in AAA"}.</div>`}
@@ -1124,7 +1210,8 @@ function renderOrders(s, bk, ad) {
     const skipped = ro && ro.skipped && ro.skipped.length ? `<div class="ticket-foot">Not bought now: ${ro.skipped.map((x) => `${esc(x.ticker)} (${esc(x.why)})`).join("; ")}.</div>` : "";
     ticket = `
     <section class="ticket" aria-labelledby="realTitle">
-      <div class="ticket-head"><h2 id="realTitle">Your orders</h2><div class="when">${ro ? esc(reason) + "<br>" + esc(when(ro.time)) : "Coming at the next check"}</div></div>
+      <div class="ticket-head"><h2 id="realTitle">Your orders${ih("realorders")}</h2><div class="when">${ro ? esc(reason) + "<br>" + esc(when(ro.time)) : "Coming at the next check"}</div></div>
+      ${ib("realorders").replace('class="infobox"', 'class="infobox" style="margin:0 18px 12px"')}
       <div class="perf" aria-hidden="true"></div>
       ${!ro ? `<div class="none">Your first real orders appear at the next check: within 20 minutes during ASX hours. To get them now, open GitHub, Actions, Signal engine, Run workflow, check now.</div>`
         : ro.items.length ? `<ul class="orders">${ro.items.map((it) => orderRow(it, ro.date, ad)).join("")}</ul>`
@@ -1152,11 +1239,11 @@ function renderOrders(s, bk, ad) {
       <td><button class="mini" data-act="del" data-id="${esc(t.id)}">Delete</button></td></tr>`).join("");
 
   $("#orders").innerHTML = `${ticket}
-    <section style="margin-top:26px"><h2>Earlier orders</h2><p class="sub">Every earlier ${real ? "real-money" : "Strategy B"} order and whether you followed it. Price difference: positive means you paid more (or sold for less) than suggested.</p>
+    <section style="margin-top:26px"><h2>Earlier orders${ih("earlier")}</h2>${ib("earlier")}<p class="sub">Every earlier ${real ? "real-money" : "Strategy B"} order and whether you followed it. Price difference: positive means you paid more (or sold for less) than suggested.</p>
       ${pastForm}
       <div class="panel scroll"><table><thead><tr><th>Date</th><th>Side</th><th>ETF</th><th class="r">Suggested</th><th>You</th><th class="r">Price diff</th><th></th></tr></thead>
       <tbody>${past || `<tr><td colspan="7">No earlier orders yet.</td></tr>`}</tbody></table></div></section>
-    <section><h2>Record another trade</h2><p class="sub">For trades that weren't in an order, for example buying earlier or later than suggested.</p>
+    <section><h2>Record another trade${ih("record")}</h2>${ib("record")}<p class="sub">For trades that weren't in an order, for example buying earlier or later than suggested.</p>
       <div class="panel"><div class="fields">
         <div><label for="m-side">Side</label><select id="m-side"><option value="BUY">Buy</option><option value="SELL">Sell</option></select></div>
         <div><label for="m-tic">ETF</label><select id="m-tic">${tickers}</select></div>
@@ -1164,7 +1251,7 @@ function renderOrders(s, bk, ad) {
         <div><label for="m-units">Units</label><input id="m-units" type="number" step="any" min="0"></div>
         <div><label for="m-price">Price per unit</label><input id="m-price" type="number" step="any" min="0"></div>
       </div><div class="row" style="margin-top:12px"><button class="btn" data-act="manual">Save trade</button></div><div class="msg" id="m-msg" role="status"></div></div></section>
-    <section><h2>Your trade record</h2><p class="sub">${bk.count} trade${bk.count === 1 ? "" : "s"} recorded. Your cash is the money you've put in (${money(bk.contributed)}), minus purchases, plus sales. Add money from the Overview.</p>
+    <section><h2>Your trade record${ih("trades")}</h2>${ib("trades")}<p class="sub">${bk.count} trade${bk.count === 1 ? "" : "s"} recorded. Your cash is the money you've put in (${money(bk.contributed)}), minus purchases, plus sales. Add money from the Overview.</p>
       <div class="panel scroll"><table><thead><tr><th>Date</th><th>Side</th><th>ETF</th><th class="r">Units</th><th class="r">Price</th><th class="r">Value</th><th class="hide-sm">Source</th><th></th></tr></thead>
       <tbody>${mine || `<tr><td colspan="8">Nothing recorded yet.</td></tr>`}</tbody></table></div></section>`;
 }
@@ -1246,7 +1333,7 @@ function renderHoldings(s, bk) {
         <td class="r ${cls(x.gain)}">${signed$(toAmt(x.gain))}<div class="th">${pct(x.cost ? x.gain / x.cost : null)}</div></td>
         <td class="hide-sm">${days == null ? "" : `${days} days<div class="th">${days >= 365 ? "Long-term" : "Short-term until " + esc(dateLong(addDays(x.since, 366)))}</div>`}</td></tr>`;
     }).join("");
-    return `<section><h2>${esc(title)}</h2><p class="sub">${esc(sub)}</p><div class="panel scroll"><table>
+    return `<section><h2>${esc(title)}${ih(showRank ? "paperB" : "paperA")}</h2>${ib(showRank ? "paperB" : "paperA")}<p class="sub">${esc(sub)}</p><div class="panel scroll"><table>
       <thead><tr><th>ETF</th><th class="r">Value</th><th class="r">Share</th><th class="r">Gain</th><th class="hide-sm">Held</th></tr></thead>
       <tbody>${rows}<tr><td><div class="t">AAA</div><div class="th">Cash ETF</div></td><td class="r">${money(toAmt(v.cash))}</td><td class="r">${(v.cash / v.equity * 100).toFixed(1)}%</td><td></td><td class="hide-sm"></td></tr></tbody></table>
       <p class="note" style="margin:10px 0 0">Total ${money(toAmt(v.equity))}</p></div></section>`;
@@ -1257,13 +1344,13 @@ function renderHoldings(s, bk) {
 
   $("#holdings").innerHTML = `
     ${coreCard(s, true)}
-    <section><h2>Your strategy holdings</h2><p class="sub">From your trade record, valued at the latest prices. Short-term parcels have been held under 12 months: a gain on selling them is taxed in full, without the 50% capital gains discount.</p>
+    <section><h2>Your strategy holdings${ih("stratholdings")}</h2>${ib("stratholdings")}<p class="sub">From your trade record, valued at the latest prices. Short-term parcels have been held under 12 months: a gain on selling them is taxed in full, without the 50% capital gains discount.</p>
       <div class="panel scroll"><table><thead><tr><th>ETF and tax status</th><th class="r hide-sm">Units</th><th class="r">Value</th><th class="r">Gain</th></tr></thead>
       <tbody>${your || `<tr><td colspan="4">Nothing recorded yet. Use “I did this” on an order.</td></tr>`}${bk.count ? `<tr><td><div class="t">Cash</div></td><td class="hide-sm"></td><td class="r">${money(bk.cash)}</td><td></td></tr>` : ""}</tbody></table></div></section>
-    ${real ? `<section><h2>Your realised gains</h2><div class="panel scroll"><table><thead><tr><th>Sold</th><th>ETF</th><th class="r">Gain</th><th class="r">Held</th><th>Tax</th></tr></thead><tbody>${real}</tbody></table></div></section>` : ""}
+    ${real ? `<section><h2>Your realised gains${ih("realised")}</h2>${ib("realised")}<div class="panel scroll"><table><thead><tr><th>Sold</th><th>ETF</th><th class="r">Gain</th><th class="r">Held</th><th>Tax</th></tr></thead><tbody>${real}</tbody></table></div></section>` : ""}
     ${paper("If you followed every recommendation (Strategy B)", "The imaginary portfolio, scaled to your amount. Trend-following, checked weekly.", s.B, true)}
     ${paper("Strategy A (paper only, no alerts)", "Daily dip-buying, kept only as a comparison.", s.A, false)}
-    <section><h2>Paper trade log</h2><div class="panel scroll"><table><thead><tr><th>Date</th><th>Strategy</th><th>Side</th><th>ETF</th><th class="r">Value</th></tr></thead>
+    <section><h2>Paper trade log${ih("log")}</h2>${ib("log")}<div class="panel scroll"><table><thead><tr><th>Date</th><th>Strategy</th><th>Side</th><th>ETF</th><th class="r">Value</th></tr></thead>
       <tbody>${all || `<tr><td colspan="5">No trades yet.</td></tr>`}</tbody></table></div></section>`;
 }
 
@@ -1277,7 +1364,7 @@ function renderRankings(s) {
     return `<tr class="${r.heldB ? "held" : ""}"><td>${r.rank}</td><td><div class="t">${etf(r.ticker)}</div><div class="th">${esc(r.theme)}</div></td>
       <td class="r ${cls(r.score)}">${pct(r.score)}</td><td class="r hide-sm">${pct(r.vs_trend)}</td><td class="r">${status}</td></tr>`;
   }).join("");
-  $("#rankings").innerHTML = `<section><h2>Momentum rankings</h2>
+  $("#rankings").innerHTML = `<section><h2>Momentum rankings${ih("rankings")}</h2>${ib("rankings")}
     <p class="sub">ETFs that beat cash and sit above their trend line, strongest first. Momentum is their average return over 3, 6 and 12 months. Strategy B buys from the top: at most ${s.n_max ?? 5} ETFs, no more than 2 per theme, and only above 101% of the trend line.</p>
     <div class="panel scroll"><table><thead><tr><th>#</th><th>ETF</th><th class="r">Momentum</th><th class="r hide-sm">Vs trend line</th><th class="r">Status</th></tr></thead>
     <tbody>${rk || `<tr><td colspan="5">No ETFs currently qualify.</td></tr>`}</tbody></table></div></section>`;
