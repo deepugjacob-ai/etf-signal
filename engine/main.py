@@ -14,7 +14,7 @@ from . import real as REAL
 from . import charts as CHARTS
 from . import core as CORE
 from . import data as DATA
-from .store import Store
+from .store import open_store
 from .strategies import b_new_weights, decide_a_entries, decide_a_exits, decide_b
 
 VERSION = 1
@@ -92,10 +92,54 @@ def holdings_view(pf, prices, raw_last, ind, t, ranks):
     return {"equity": eq, "cash": pf["cash_units"] * prices[C.CASH], "holdings": rows}
 
 
+def watch_sell_line(state, alerts, now, ind, t, info, raw_last, watched, label, decided):
+    """Mid-week heads-up when something you hold drops below its sell line (98% of its 200-day average).
+    Information only: Strategy B still decides on Friday from 3pm. One alert per ETF per 7 days."""
+    book = state.setdefault("sell_line", {})
+    tradable = set(info.get("tradable") or [])
+    today = now.date()
+    rows = {}
+    for k in sorted(set(watched)):
+        if k == C.CASH or k not in C.UNIVERSE:
+            continue
+        sma, P = ind["sma"].at[t, k], ind["P"].at[t, k]
+        if pd.isna(sma) or pd.isna(P) or not raw_last.get(k):
+            continue
+        line = float(sma) * (1 - C.B_BAND) * raw_last[k] / float(P)     # the sell line in real (broker) prices
+        below = not bool(ind["above_hold"].at[t, k])
+        prev = book.get(k, {})
+        rows[k] = {"below": below, "price": raw_last[k], "line": line, "gap": raw_last[k] / line - 1,
+                   "since": (prev.get("since") or today.isoformat()) if below else None, "alerted": prev.get("alerted"),
+                   "fresh": k in tradable}
+    state["sell_line"] = rows
+    if not info.get("market_open") or decided or (now.weekday() == 4 and after_decision(now)):
+        return
+    new = [k for k, r in rows.items() if r["below"] and r["fresh"] and
+           (not r["alerted"] or (today - dt.date.fromisoformat(r["alerted"])).days >= 7)]
+    if not new:
+        return
+    for k in new:
+        rows[k]["alerted"] = today.isoformat()
+    parts = [f"{k} is ${rows[k]['price']:,.2f}, under its sell line of ${rows[k]['line']:,.2f}" for k in new]
+    title = f"{label}below the sell line: {', '.join(new)}"
+    add_alert(state, alerts, now, title[0].upper() + title[1:],
+              "; ".join(parts) + ". Heads-up only: the rules sell at the weekly check (Friday from 3pm) if it's still below then.",
+              "sell-line")
+
+
 def add_alert(state, alerts, now, title, body, tag):
     a = {"id": f"{now.isoformat()}|{tag}", "time": now.isoformat(), "title": title, "body": body, "tag": tag}
     alerts.append(a)
     state["alerts"] = ([a] + state.get("alerts", []))[:40]
+
+
+def traded_tickers(mytrades):
+    return sorted({x.get("ticker") for x in mytrades or [] if x.get("status") == "done" and x.get("side") in ("BUY", "SELL") and x.get("ticker")})
+
+
+def first_trade_date(mytrades, today):
+    ds = [x.get("date") for x in mytrades or [] if x.get("status") == "done" and x.get("side") in ("BUY", "SELL") and x.get("date")]
+    return min(ds) if ds else today.isoformat()
 
 
 def run(state, now, key, alerts, scale=1.0, capital=C.START_CAPITAL, mytrades=None, mode="paper", recalc=None, prev_charts=None, core=None):
@@ -108,6 +152,15 @@ def run(state, now, key, alerts, scale=1.0, capital=C.START_CAPITAL, mytrades=No
     prices = px.ffill().loc[t].to_dict()
     open_today = info["market_open"]
     tradable = set(info["tradable"]) if info.get("tradable") else None
+    state["prices_date"] = tstr
+    # Distributions paid by the ETFs you've traded (published amounts; cached, refreshed daily)
+    try:
+        divs = DATA.distributions(key, [k for k in traded_tickers(mytrades) if k in close.columns],
+                                  first_trade_date(mytrades, today), state.setdefault("div_cache", {}), today,
+                                  info.get("ex_dividend_today"))
+    except Exception as e:      # never let distributions break a run
+        print("Distributions skipped:", type(e).__name__, e)
+        divs = {}
 
     first = "B" not in state
     if first:
@@ -168,11 +221,11 @@ def run(state, now, key, alerts, scale=1.0, capital=C.START_CAPITAL, mytrades=No
     # Real-money orders: sized from what you actually hold. Made at every weekly check, on the first run after
     # switching to real money, and when you tap "Recalculate my orders".
     if mode == "real" and (due_B or not B.get("real_orders") or (recalc and recalc != B.get("real_recalc"))):
-        mine_now = MINE.compute(mytrades or [], px.ffill(), close.ffill(), capital, state["history"], today)
+        mine_now = MINE.compute(mytrades or [], px.ffill(), close.ffill(), capital, state["history"], today, divs)
         hold = mine_now.get("holdings", []) if mine_now.get("has_trades") else []
         cash = mine_now.get("cash", capital) if mine_now.get("has_trades") else capital
         targets = list(B["pf"]["units"])
-        ro = REAL.orders(ind, t, targets, tradable, hold, cash, raw_last)
+        ro = REAL.orders(ind, t, targets, tradable, hold, cash, raw_last, today)
         first_real = not B.get("real_orders")
         for o in ro["items"]:
             o["key"] = f"R|{tstr}|{o['side']}|{o['ticker']}"
@@ -244,13 +297,21 @@ def run(state, now, key, alerts, scale=1.0, capital=C.START_CAPITAL, mytrades=No
     except Exception as e:      # core holdings are separate from the strategy: never let them break a run
         print("Core holdings skipped:", type(e).__name__, e)
         state["core"] = {"has_core": False, "error": str(e)[:200]}
-    state["mine"] = MINE.compute(mytrades or [], px.ffill(), close.ffill(), capital, state["history"], today)
+    state["mine"] = MINE.compute(mytrades or [], px.ffill(), close.ffill(), capital, state["history"], today, divs)
+    # Mid-week sell-line heads-up for what you follow: your real holdings in real-money mode, the paper portfolio otherwise
+    if mode == "real":
+        watched, label = [h["ticker"] for h in state["mine"].get("holdings", [])], ""
+    else:
+        watched, label = list(B["pf"]["units"]), "Paper portfolio: "
+    try:
+        watch_sell_line(state, alerts, now, ind, t, info, raw_last, watched, label, due_B)
+    except Exception as e:
+        print("Sell-line check skipped:", type(e).__name__, e)
     try:
         return CHARTS.build(sorted(set(CHARTS.wanted(state)) | set(core_t)), close.ffill(), px.ffill(), ind["sma"], prev_charts, raw_last, info, now)
     except Exception as e:          # charts are a nice-to-have: never let them break the strategy run
         print("Charts skipped:", type(e).__name__, e)
         return None
-    state["prices_date"] = tstr
 
 
 def main(argv=None):
@@ -262,7 +323,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     tz = ZoneInfo(C.TZ)
     now = dt.datetime.fromisoformat(a.now).replace(tzinfo=tz) if a.now else dt.datetime.now(tz)
-    store = Store(os.environ.get("GIST_ID"), os.environ.get("GIST_TOKEN"), a.local)
+    store = open_store(os.environ, a.local)
+    print("Data store:", store.kind)
     keys = ensure_keys(store)
     subs = store.read("subscriptions.json", []) or []
     state = store.read("state.json", {}) or {}
@@ -313,7 +375,7 @@ def main(argv=None):
     except Exception as e:
         st = state.get("status", {})
         msg = f"{type(e).__name__}: {e}"
-        for secret in (key, os.environ.get("GIST_TOKEN")):
+        for secret in (key, os.environ.get("GIST_TOKEN"), os.environ.get("DATA_TOKEN")):
             if secret:
                 msg = msg.replace(secret, "***")
         msg = msg[:300]

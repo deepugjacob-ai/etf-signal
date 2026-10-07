@@ -13,7 +13,7 @@ def ensure_keys(store):
     v.generate_keys()
     pub = v.public_key.public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
     keys = {"public": base64.urlsafe_b64encode(pub).decode().rstrip("="),
-            "private_pem": v.private_pem().decode(), "created": dt.datetime.utcnow().isoformat()}
+            "private_pem": v.private_pem().decode(), "created": dt.datetime.now(dt.timezone.utc).isoformat()}
     store.write({"keys.json": keys})
     return keys
 
@@ -47,7 +47,7 @@ def send_all(store, keys, subs, title, body, tag="signal", sub_claim="https://gi
             keep.append(s)
     if gone:
         # re-read so a device added while this ran is not lost, then drop only the expired ones
-        store._cache = None
+        store.refresh()
         latest = store.read("subscriptions.json", []) or []
         keep = [x for x in latest if x.get("endpoint") not in gone]
         store.write({"subscriptions.json": keep})

@@ -2,9 +2,10 @@
 Uses your recorded trades (units you really hold, your real cash), not the $10k paper portfolio."""
 from . import config as C
 from .strategies import b_new_weights
+from .mine import sale_tax
 
 
-def orders(ind, t, targets: list, tradable, holdings: list, cash: float, raw_last: dict) -> dict:
+def orders(ind, t, targets: list, tradable, holdings: list, cash: float, raw_last: dict, today=None) -> dict:
     """targets: the ETFs Strategy B holds now. holdings: your actual holdings from mine.compute.
     Returns {"items": [...], "total": your value, "skipped": [...]}."""
     held = {h["ticker"]: h["units"] for h in holdings if h["units"] > 1e-9}
@@ -51,6 +52,12 @@ def orders(ind, t, targets: list, tradable, holdings: list, cash: float, raw_las
         if a >= 1:
             items.append({"side": "BUY", "ticker": k, "units": round(a / price(k), 4), "price": price(k), "value": a, "whole": False})
             avail -= a
+    # Tax estimate for each sale, using the same least-tax-first parcel choice as your trade record
+    lots = {h["ticker"]: h.get("lots") or [] for h in holdings}
+    if today is not None:
+        for it in items:
+            if it["side"] == "SELL" and lots.get(it["ticker"]) and it.get("price"):
+                it["tax"] = sale_tax(lots[it["ticker"]], it["units"], it["price"], today)
     # 4. park leftover cash in AAA, as the strategy does (skip small amounts)
     if avail >= 100 and price(C.CASH):
         items.append({"side": "BUY", "ticker": C.CASH, "units": round(avail / price(C.CASH), 4), "price": price(C.CASH),

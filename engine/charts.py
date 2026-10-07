@@ -29,6 +29,19 @@ def build(tickers, close: pd.DataFrame, px: pd.DataFrame, sma: pd.DataFrame, pre
                 pts.append([stamp, round(float(raw_last[k]), 4)])
         out["intraday"][k] = pts[-40:]
     out["intraday_date"] = today
+    # Momentum and distance from the trend line on distribution-adjusted prices, exactly as the strategy and the
+    # historical odds table measure them (the raw chart prices would put high-yield ETFs in the wrong group).
+    out["stats"] = {}
+    for k in out["series"]:
+        if k not in px.columns:
+            continue
+        p = px[k].dropna()
+        if len(p) < max(C.B_LOOKBACKS) + 1 or len(p) < C.B_MA:
+            continue
+        now_ = float(p.iloc[-1])
+        score = sum(now_ / float(p.iloc[-1 - l]) - 1 for l in C.B_LOOKBACKS) / len(C.B_LOOKBACKS)
+        trend = now_ / float(p.iloc[-C.B_MA:].mean()) - 1
+        out["stats"][k] = {"score": round(score, 5), "trend": round(trend, 5)}
     return out
 
 

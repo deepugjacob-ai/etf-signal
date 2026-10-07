@@ -90,6 +90,39 @@ def dividends_today(key: str, today: dt.date) -> dict:
     return out
 
 
+def dividend_history(key: str, ticker: str, frm: str) -> list:
+    """Cash distributions per unit for one ETF since `frm`: [{"ex", "pay", "amount"}]. Raises on failure."""
+    d = _get(f"{BASE}/div/{code(ticker)}", {"api_token": key, "fmt": "json", "from": frm}, tries=2)
+    out = []
+    for x in d if isinstance(d, list) else []:
+        try:
+            amt = float(x.get("unadjustedValue") if x.get("unadjustedValue") is not None else x.get("value"))
+        except (TypeError, ValueError):
+            continue
+        if amt > 0 and x.get("date"):
+            out.append({"ex": x["date"], "pay": x.get("paymentDate"), "amount": amt})
+    return out
+
+
+def distributions(key: str, tickers, frm: str, cache: dict, today: dt.date, ex_today: dict = None) -> dict:
+    """Distribution history for the ETFs you've traded, refreshed at most once a day per ETF (cached in state).
+    A failed fetch keeps yesterday's list. Today's ex-dividend amounts from the bulk feed are added if missing."""
+    out = {}
+    for k in sorted(set(tickers)):
+        c = (cache or {}).get(k) or {}
+        if c.get("fetched") != today.isoformat() or c.get("from", "9999") > frm:
+            try:
+                c = {"fetched": today.isoformat(), "from": frm, "rows": dividend_history(key, k, frm)}
+            except Exception as e:
+                print(f"Distributions for {k} not refreshed:", type(e).__name__)
+        rows = list(c.get("rows") or [])
+        if ex_today and k in ex_today and not any(r["ex"] == today.isoformat() for r in rows):
+            rows.append({"ex": today.isoformat(), "pay": None, "amount": float(ex_today[k])})
+        cache[k] = {**c, "rows": rows} if c else {"fetched": None, "from": frm, "rows": rows}
+        out[k] = rows
+    return out
+
+
 def load(key: str, now: dt.datetime):
     """Returns adjusted prices (with today's delayed price appended when the market traded today),
     $ turnover, raw last prices (for order sizes), and info about data freshness."""
