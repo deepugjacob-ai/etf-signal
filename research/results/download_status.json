@@ -1,0 +1,12 @@
+{
+ "run": "2026-10-22T22:06:53.588507+00:00",
+ "tickers": {
+  "STW": {
+   "bars": 0,
+   "errors": [
+    "HTTP 403: Forbidden"
+   ],
+   "first": null
+  }
+ }
+}
