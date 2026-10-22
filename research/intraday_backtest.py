@@ -11,7 +11,8 @@ If a bar touches both the stop and the target, the stop is assumed to hit first.
 Costs: Betashares brokerage is $0, but every round trip pays the bid-ask spread plus a little slippage.
 Spread estimates per ticker are in SPREAD below; results are also shown at zero and at double cost.
 
-Usage: python research/intraday_backtest.py DATA_DIR OUT_DIR"""
+Usage: python research/intraday_backtest.py DATA_DIR OUT_DIR
+Data: research/intraday/ in the private data repository (written by intraday_fetch.py)."""
 import glob, json, math, os, sys
 import numpy as np
 import pandas as pd
