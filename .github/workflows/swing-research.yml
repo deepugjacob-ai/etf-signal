@@ -1,0 +1,62 @@
+name: Swing research (1-5 day trades)
+
+# Research only. Downloads daily ASX prices since 2010, saves them to the PRIVATE data repository
+# (research/daily/), runs the 1-5 day backtest, and publishes only the summary results (no prices) to this branch.
+on:
+  push:
+    branches: [claude/intraday-research]
+    paths:
+      - research/swing_fetch.py
+      - research/swing_backtest.py
+      - .github/workflows/swing-research.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: intraday-research-results
+  cancel-in-progress: false
+
+jobs:
+  swing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests pandas numpy
+      - name: Download daily prices
+        env:
+          EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
+        run: python research/swing_fetch.py daily
+      - name: Run the backtest
+        run: python research/swing_backtest.py daily out
+      - name: Save the prices to the private data repository
+        env:
+          DATA_REPO: ${{ secrets.DATA_REPO }}
+          DATA_TOKEN: ${{ secrets.DATA_TOKEN }}
+        run: |
+          REPO=$(echo "$DATA_REPO" | tr -d '[:space:]' | sed -e 's#^https\?://github.com/##' -e 's#\.git$##' -e 's#/$##')
+          git clone --depth 1 --filter=blob:none --sparse "https://x-access-token:${DATA_TOKEN}@github.com/${REPO}.git" data
+          git -C data sparse-checkout set research/daily
+          mkdir -p data/research/daily && cp daily/* data/research/daily/
+          cd data
+          git config user.name "signal-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add research/daily
+          git commit -m "Swing research data (daily prices)" || exit 0
+          for i in 1 2 3 4; do git push && break; sleep 5; git pull --rebase origin main; done
+      - name: Publish summary results to this branch
+        if: always()
+        run: |
+          mkdir -p research/results
+          cp out/swing_backtest.json out/swing_backtest.md research/results/ 2>/dev/null || true
+          python -c "import json,sys;d=json.load(open('daily/status.json'));json.dump({k:{'days':v['days'],'first':v['first'],'error':v['error']} for k,v in d.items()},open('research/results/swing_download_status.json','w'),indent=1)" || true
+          git config user.name "signal-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add research/results
+          git commit -m "Swing research: results" || exit 0
+          for i in 1 2 3; do git push && break; sleep 3; git pull --rebase origin claude/intraday-research; done
