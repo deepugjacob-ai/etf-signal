@@ -1,0 +1,46 @@
+name: Intraday research data
+
+# Research only. Downloads 5-minute ASX bars and saves them to the PRIVATE data repository
+# (research/intraday/). Runs when this file or the fetch script changes on the research branch.
+# Never touches the live engine, the dashboard or state.json.
+on:
+  push:
+    branches: [claude/intraday-research]
+    paths:
+      - research/intraday_fetch.py
+      - .github/workflows/intraday-research.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Download 5-minute bars
+        env:
+          EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
+        run: python research/intraday_fetch.py out
+      - name: Save to the private data repository
+        env:
+          DATA_REPO: ${{ secrets.DATA_REPO }}
+          DATA_TOKEN: ${{ secrets.DATA_TOKEN }}
+        run: |
+          REPO=$(echo "$DATA_REPO" | tr -d '[:space:]' | sed -e 's#^https\?://github.com/##' -e 's#\.git$##' -e 's#/$##')
+          git clone --depth 1 "https://x-access-token:${DATA_TOKEN}@github.com/${REPO}.git" data
+          mkdir -p data/research/intraday
+          cp out/* data/research/intraday/
+          cd data
+          git config user.name "signal-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add research/intraday
+          git commit -m "Intraday research data (5-minute bars)" || echo "nothing new"
+          # the live engine also saves here every few minutes: rebase onto its latest commit if it got in first
+          for i in 1 2 3 4; do git push && break; sleep 5; git pull --rebase --depth 1 origin main || git pull --rebase origin main; done
