@@ -1,0 +1,362 @@
+{
+ "A200": {
+  "days": 2146,
+  "first": "2018-05-07",
+  "error": null
+ },
+ "AAA": {
+  "days": 3706,
+  "first": "2012-03-06",
+  "error": null
+ },
+ "ASIA": {
+  "days": 2051,
+  "first": "2018-09-18",
+  "error": null
+ },
+ "ATEC": {
+  "days": 1682,
+  "first": "2020-03-04",
+  "error": null
+ },
+ "BOND": {
+  "days": 3608,
+  "first": "2012-07-26",
+  "error": null
+ },
+ "DJRE": {
+  "days": 3285,
+  "first": "2013-11-01",
+  "error": null
+ },
+ "DRUG": {
+  "days": 2588,
+  "first": "2016-08-04",
+  "error": null
+ },
+ "ETHI": {
+  "days": 2481,
+  "first": "2017-01-05",
+  "error": null
+ },
+ "FANG": {
+  "days": 1686,
+  "first": "2020-02-27",
+  "error": null
+ },
+ "FLOT": {
+  "days": 2356,
+  "first": "2017-07-06",
+  "error": null
+ },
+ "FUEL": {
+  "days": 2623,
+  "first": "2016-06-16",
+  "error": null
+ },
+ "GOLD": {
+  "days": 4254,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "HACK": {
+  "days": 2570,
+  "first": "2016-08-30",
+  "error": null
+ },
+ "IAA": {
+  "days": 4255,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "IAF": {
+  "days": 3700,
+  "first": "2012-03-14",
+  "error": null
+ },
+ "IEM": {
+  "days": 4250,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "IEU": {
+  "days": 4255,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "IFRA": {
+  "days": 2656,
+  "first": "2016-04-29",
+  "error": null
+ },
+ "IGB": {
+  "days": 3701,
+  "first": "2012-03-13",
+  "error": null
+ },
+ "IHD": {
+  "days": 4019,
+  "first": "2010-12-07",
+  "error": null
+ },
+ "IHVV": {
+  "days": 3002,
+  "first": "2014-12-15",
+  "error": null
+ },
+ "IJP": {
+  "days": 4251,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "INCM": {
+  "days": 2028,
+  "first": "2018-10-19",
+  "error": null
+ },
+ "IOO": {
+  "days": 4251,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "IOZ": {
+  "days": 4019,
+  "first": "2010-12-07",
+  "error": null
+ },
+ "ISO": {
+  "days": 4015,
+  "first": "2010-12-07",
+  "error": null
+ },
+ "IVV": {
+  "days": 4254,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "IWLD": {
+  "days": 2660,
+  "first": "2016-04-22",
+  "error": null
+ },
+ "IXJ": {
+  "days": 4251,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "IZZ": {
+  "days": 4248,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "MNRS": {
+  "days": 2594,
+  "first": "2016-07-27",
+  "error": null
+ },
+ "MOAT": {
+  "days": 2872,
+  "first": "2015-06-24",
+  "error": null
+ },
+ "MVA": {
+  "days": 3299,
+  "first": "2013-10-14",
+  "error": null
+ },
+ "MVS": {
+  "days": 2892,
+  "first": "2015-05-26",
+  "error": null
+ },
+ "NDQ": {
+  "days": 2892,
+  "first": "2015-05-26",
+  "error": null
+ },
+ "OZF": {
+  "days": 3931,
+  "first": "2011-04-12",
+  "error": null
+ },
+ "OZR": {
+  "days": 3933,
+  "first": "2011-04-12",
+  "error": null
+ },
+ "QAU": {
+  "days": 3920,
+  "first": "2011-05-04",
+  "error": null
+ },
+ "QPON": {
+  "days": 2380,
+  "first": "2017-06-01",
+  "error": null
+ },
+ "QRE": {
+  "days": 4012,
+  "first": "2010-12-10",
+  "error": null
+ },
+ "QUAL": {
+  "days": 3035,
+  "first": "2014-10-29",
+  "error": null
+ },
+ "RARI": {
+  "days": 2929,
+  "first": "2015-04-01",
+  "error": null
+ },
+ "ROBO": {
+  "days": 2307,
+  "first": "2017-09-13",
+  "error": null
+ },
+ "SEMI": {
+  "days": 1305,
+  "first": "2021-08-27",
+  "error": null
+ },
+ "SLF": {
+  "days": 4254,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "STW": {
+  "days": 4254,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "TECH": {
+  "days": 2416,
+  "first": "2017-04-07",
+  "error": null
+ },
+ "VAF": {
+  "days": 3541,
+  "first": "2012-10-29",
+  "error": null
+ },
+ "VAP": {
+  "days": 4059,
+  "first": "2010-10-11",
+  "error": null
+ },
+ "VAS": {
+  "days": 4254,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "VEU": {
+  "days": 4255,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "VGB": {
+  "days": 3673,
+  "first": "2012-04-24",
+  "error": null
+ },
+ "VGE": {
+  "days": 3274,
+  "first": "2013-11-18",
+  "error": null
+ },
+ "VGS": {
+  "days": 3021,
+  "first": "2014-11-18",
+  "error": null
+ },
+ "VHY": {
+  "days": 3906,
+  "first": "2011-05-23",
+  "error": null
+ },
+ "VSO": {
+  "days": 3907,
+  "first": "2011-05-23",
+  "error": null
+ },
+ "VTS": {
+  "days": 4251,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "WDIV": {
+  "days": 3285,
+  "first": "2013-11-01",
+  "error": null
+ },
+ "BHP": {
+  "days": 4254,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "CBA": {
+  "days": 4250,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "CSL": {
+  "days": 4255,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "NAB": {
+  "days": 4248,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "WBC": {
+  "days": 4250,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "ANZ": {
+  "days": 4250,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "FMG": {
+  "days": 4255,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "RIO": {
+  "days": 4254,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "WES": {
+  "days": 4251,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "MQG": {
+  "days": 4251,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "WDS": {
+  "days": 4251,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "TLS": {
+  "days": 4254,
+  "first": "2010-01-04",
+  "error": null
+ },
+ "XRO": {
+  "days": 3533,
+  "first": "2012-11-08",
+  "error": null
+ },
+ "PLS": {
+  "days": 4252,
+  "first": "2010-01-04",
+  "error": null
+ }
+}
