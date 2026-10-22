@@ -1,0 +1,48 @@
+name: Intraday research backtest
+
+# Research only. Reads the 5-minute bars saved in the PRIVATE data repository, runs the intraday
+# backtest, and publishes only the summary results (no prices) to this branch.
+on:
+  push:
+    branches: [claude/intraday-research]
+    paths:
+      - research/intraday_backtest.py
+      - .github/workflows/intraday-backtest.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: intraday-research-results
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pandas numpy
+      - name: Get the 5-minute bars from the private data repository
+        env:
+          DATA_REPO: ${{ secrets.DATA_REPO }}
+          DATA_TOKEN: ${{ secrets.DATA_TOKEN }}
+        run: |
+          REPO=$(echo "$DATA_REPO" | tr -d '[:space:]' | sed -e 's#^https\?://github.com/##' -e 's#\.git$##' -e 's#/$##')
+          git clone --depth 1 --filter=blob:none --sparse "https://x-access-token:${DATA_TOKEN}@github.com/${REPO}.git" data
+          git -C data sparse-checkout set research/intraday
+          ls data/research/intraday | head -50
+      - name: Run the backtest
+        run: python research/intraday_backtest.py data/research/intraday out
+      - name: Publish summary results to this branch
+        run: |
+          mkdir -p research/results && cp out/backtest.json out/backtest.md research/results/
+          git config user.name "signal-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add research/results
+          git commit -m "Intraday research: backtest results" || exit 0
+          for i in 1 2 3; do git push && break; sleep 3; git pull --rebase origin claude/intraday-research; done
