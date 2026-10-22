@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   fetch:
@@ -44,3 +44,10 @@ jobs:
           git commit -m "Intraday research data (5-minute bars)" || echo "nothing new"
           # the live engine also saves here every few minutes: rebase onto its latest commit if it got in first
           for i in 1 2 3 4; do git push && break; sleep 5; git pull --rebase --depth 1 origin main || git pull --rebase origin main; done
+      - name: Publish the download summary (counts and errors only, no prices) to this branch
+        if: always()
+        run: |
+          mkdir -p research/results && cp out/status.json research/results/download_status.json || exit 0
+          git config user.name "signal-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add research/results && git commit -m "Intraday research: download summary" && git push || echo "nothing to publish"
