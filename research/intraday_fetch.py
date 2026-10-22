@@ -1,4 +1,4 @@
-"""Research only: download 5-minute ASX bars from EODHD for the intraday backtest.
+"""Research only: download 5-minute ASX bars from EODHD (Active Trader plan) for the intraday backtest.
 Writes one gzipped CSV per ticker to OUT_DIR (the private data repository, never this public one).
 Does not touch the live engine or any of its files."""
 import csv, datetime as dt, gzip, json, os, sys, time
