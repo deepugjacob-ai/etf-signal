@@ -1,0 +1,756 @@
+{
+ "tickers": {
+  "A200": {
+   "days": 1524,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "AAA": {
+   "days": 1524,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "ANZ": {
+   "days": 1513,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "BHP": {
+   "days": 1524,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "CBA": {
+   "days": 1521,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "CSL": {
+   "days": 1523,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "ETHI": {
+   "days": 1525,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "FANG": {
+   "days": 1524,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "FMG": {
+   "days": 1524,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "FUEL": {
+   "days": 1523,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "GOLD": {
+   "days": 1519,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "HACK": {
+   "days": 1523,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "IAA": {
+   "days": 1524,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "IOZ": {
+   "days": 1524,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "IVV": {
+   "days": 1520,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "MQG": {
+   "days": 1525,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "MVW": {
+   "days": 1524,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "NAB": {
+   "days": 1522,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "NDQ": {
+   "days": 1523,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "OZR": {
+   "days": 1516,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "PLS": {
+   "days": 1515,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "QAU": {
+   "days": 1524,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "QRE": {
+   "days": 1522,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "RIO": {
+   "days": 1523,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "SEMI": {
+   "days": 888,
+   "from": "2023-04-26",
+   "to": "2026-10-22"
+  },
+  "STW": {
+   "days": 1520,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "TLS": {
+   "days": 1518,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "VAS": {
+   "days": 1524,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "VGS": {
+   "days": 1524,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "VHY": {
+   "days": 1523,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "WBC": {
+   "days": 1524,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "WDS": {
+   "days": 1118,
+   "from": "2022-05-25",
+   "to": "2026-10-22"
+  },
+  "WES": {
+   "days": 1525,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  },
+  "XRO": {
+   "days": 1525,
+   "from": "2020-10-12",
+   "to": "2026-10-22"
+  }
+ },
+ "rules": {
+  "Opening range breakout": {
+   "doc": "Opening range breakout: high/low of 10:10-10:40. Buy on the first close above the range high (before 13:00); stop at the range low; hold to the close.",
+   "design (2020-23)": {
+    "no cost": {
+     "trades": 8504,
+     "trades_per_year": 2635.9,
+     "avg_net_pct": -0.008,
+     "win_rate_pct": 43.1,
+     "t_stat": -1.05,
+     "account_cagr_pct": -10.55,
+     "account_worst_fall_pct": -32.1,
+     "sharpe": -1.86
+    },
+    "realistic cost": {
+     "trades": 8504,
+     "trades_per_year": 2635.9,
+     "avg_net_pct": -0.112,
+     "win_rate_pct": 35.6,
+     "t_stat": -15.4,
+     "account_cagr_pct": -29.27,
+     "account_worst_fall_pct": -67.6,
+     "sharpe": -5.77
+    },
+    "double cost": {
+     "trades": 8504,
+     "trades_per_year": 2635.9,
+     "avg_net_pct": -0.216,
+     "win_rate_pct": 29.1,
+     "t_stat": -29.4,
+     "account_cagr_pct": -44.08,
+     "account_worst_fall_pct": -84.8,
+     "sharpe": -9.47
+    },
+    "ETFs only": {
+     "trades": 3852,
+     "trades_per_year": 1194.0,
+     "avg_net_pct": -0.145,
+     "win_rate_pct": 26.6,
+     "t_stat": -29.61,
+     "account_cagr_pct": -29.67,
+     "account_worst_fall_pct": -67.9,
+     "sharpe": -11.04
+    },
+    "shares only": {
+     "trades": 4652,
+     "trades_per_year": 1441.9,
+     "avg_net_pct": -0.085,
+     "win_rate_pct": 43.1,
+     "t_stat": -6.7,
+     "account_cagr_pct": -24.14,
+     "account_worst_fall_pct": -59.8,
+     "sharpe": -3.68
+    }
+   },
+   "test (2024-now)": {
+    "no cost": {
+     "trades": 10703,
+     "trades_per_year": 3782.8,
+     "avg_net_pct": -0.0,
+     "win_rate_pct": 42.2,
+     "t_stat": -0.06,
+     "account_cagr_pct": -4.69,
+     "account_worst_fall_pct": -17.8,
+     "sharpe": -0.78
+    },
+    "realistic cost": {
+     "trades": 10703,
+     "trades_per_year": 3782.8,
+     "avg_net_pct": -0.126,
+     "win_rate_pct": 33.7,
+     "t_stat": -20.48,
+     "account_cagr_pct": -27.72,
+     "account_worst_fall_pct": -60.0,
+     "sharpe": -5.39
+    },
+    "double cost": {
+     "trades": 10703,
+     "trades_per_year": 3782.8,
+     "avg_net_pct": -0.251,
+     "win_rate_pct": 26.2,
+     "t_stat": -40.05,
+     "account_cagr_pct": -45.21,
+     "account_worst_fall_pct": -81.7,
+     "sharpe": -9.72
+    },
+    "ETFs only": {
+     "trades": 5705,
+     "trades_per_year": 2016.4,
+     "avg_net_pct": -0.165,
+     "win_rate_pct": 26.2,
+     "t_stat": -33.43,
+     "account_cagr_pct": -39.52,
+     "account_worst_fall_pct": -75.9,
+     "sharpe": -13.42
+    },
+    "shares only": {
+     "trades": 4998,
+     "trades_per_year": 1766.5,
+     "avg_net_pct": -0.081,
+     "win_rate_pct": 42.4,
+     "t_stat": -6.81,
+     "account_cagr_pct": -20.52,
+     "account_worst_fall_pct": -47.8,
+     "sharpe": -2.92
+    }
+   },
+   "test by year (avg net % per trade, realistic cost)": {
+    "2024": -0.115,
+    "2025": -0.127,
+    "2026": -0.136
+   },
+   "exit reasons (all)": {
+    "close": 12198,
+    "stop": 7009
+   }
+  },
+  "Dip below VWAP (mean reversion)": {
+   "doc": "Buy a sharp dip: first close at least 1.0% below the day's running VWAP (after 10:40). Target: back to 0.5% below VWAP at entry. Stop: a further 1.0% down. Otherwise exit at close.",
+   "design (2020-23)": {
+    "no cost": {
+     "trades": 1334,
+     "trades_per_year": 413.5,
+     "avg_net_pct": -0.015,
+     "win_rate_pct": 56.0,
+     "t_stat": -0.75,
+     "account_cagr_pct": 2.48,
+     "account_worst_fall_pct": -7.2,
+     "sharpe": 0.53
+    },
+    "realistic cost": {
+     "trades": 1334,
+     "trades_per_year": 413.5,
+     "avg_net_pct": -0.101,
+     "win_rate_pct": 53.5,
+     "t_stat": -4.98,
+     "account_cagr_pct": -6.47,
+     "account_worst_fall_pct": -23.6,
+     "sharpe": -1.35
+    },
+    "double cost": {
+     "trades": 1334,
+     "trades_per_year": 413.5,
+     "avg_net_pct": -0.186,
+     "win_rate_pct": 51.5,
+     "t_stat": -9.18,
+     "account_cagr_pct": -14.64,
+     "account_worst_fall_pct": -41.0,
+     "sharpe": -3.19
+    },
+    "ETFs only": {
+     "trades": 75,
+     "trades_per_year": 23.2,
+     "avg_net_pct": -0.214,
+     "win_rate_pct": 37.3,
+     "t_stat": -3.63,
+     "account_cagr_pct": -1.16,
+     "account_worst_fall_pct": -3.8,
+     "sharpe": -1.38
+    },
+    "shares only": {
+     "trades": 1259,
+     "trades_per_year": 390.2,
+     "avg_net_pct": -0.094,
+     "win_rate_pct": 54.5,
+     "t_stat": -4.45,
+     "account_cagr_pct": -6.49,
+     "account_worst_fall_pct": -23.5,
+     "sharpe": -1.35
+    }
+   },
+   "test (2024-now)": {
+    "no cost": {
+     "trades": 1380,
+     "trades_per_year": 487.7,
+     "avg_net_pct": -0.006,
+     "win_rate_pct": 56.2,
+     "t_stat": -0.3,
+     "account_cagr_pct": 0.71,
+     "account_worst_fall_pct": -12.7,
+     "sharpe": 0.17
+    },
+    "realistic cost": {
+     "trades": 1380,
+     "trades_per_year": 487.7,
+     "avg_net_pct": -0.107,
+     "win_rate_pct": 53.4,
+     "t_stat": -5.46,
+     "account_cagr_pct": -11.3,
+     "account_worst_fall_pct": -30.6,
+     "sharpe": -2.45
+    },
+    "double cost": {
+     "trades": 1380,
+     "trades_per_year": 487.7,
+     "avg_net_pct": -0.208,
+     "win_rate_pct": 50.4,
+     "t_stat": -10.53,
+     "account_cagr_pct": -21.89,
+     "account_worst_fall_pct": -50.5,
+     "sharpe": -4.92
+    },
+    "ETFs only": {
+     "trades": 184,
+     "trades_per_year": 65.0,
+     "avg_net_pct": -0.234,
+     "win_rate_pct": 41.8,
+     "t_stat": -4.35,
+     "account_cagr_pct": -4.16,
+     "account_worst_fall_pct": -11.3,
+     "sharpe": -1.79
+    },
+    "shares only": {
+     "trades": 1196,
+     "trades_per_year": 422.7,
+     "avg_net_pct": -0.087,
+     "win_rate_pct": 55.2,
+     "t_stat": -4.16,
+     "account_cagr_pct": -9.78,
+     "account_worst_fall_pct": -28.6,
+     "sharpe": -2.18
+    }
+   },
+   "test by year (avg net % per trade, realistic cost)": {
+    "2024": -0.085,
+    "2025": -0.097,
+    "2026": -0.128
+   },
+   "exit reasons (all)": {
+    "target": 1285,
+    "stop": 759,
+    "close": 670
+   }
+  },
+  "Gap-down fade": {
+   "doc": "If the first 10:10 bar opens 1% or more below yesterday's close, buy at 10:15 and hold to close, stop 1.5% below entry.",
+   "design (2020-23)": {
+    "no cost": {
+     "trades": 2141,
+     "trades_per_year": 663.6,
+     "avg_net_pct": 0.015,
+     "win_rate_pct": 48.7,
+     "t_stat": 0.6,
+     "account_cagr_pct": 0.2,
+     "account_worst_fall_pct": -11.9,
+     "sharpe": 0.06
+    },
+    "realistic cost": {
+     "trades": 2141,
+     "trades_per_year": 663.6,
+     "avg_net_pct": -0.092,
+     "win_rate_pct": 43.0,
+     "t_stat": -3.57,
+     "account_cagr_pct": -11.78,
+     "account_worst_fall_pct": -37.7,
+     "sharpe": -1.57
+    },
+    "double cost": {
+     "trades": 2141,
+     "trades_per_year": 663.6,
+     "avg_net_pct": -0.198,
+     "win_rate_pct": 38.2,
+     "t_stat": -7.7,
+     "account_cagr_pct": -22.34,
+     "account_worst_fall_pct": -57.6,
+     "sharpe": -3.13
+    },
+    "ETFs only": {
+     "trades": 740,
+     "trades_per_year": 229.4,
+     "avg_net_pct": -0.143,
+     "win_rate_pct": 38.8,
+     "t_stat": -6.63,
+     "account_cagr_pct": -9.57,
+     "account_worst_fall_pct": -28.0,
+     "sharpe": -3.05
+    },
+    "shares only": {
+     "trades": 1401,
+     "trades_per_year": 434.3,
+     "avg_net_pct": -0.064,
+     "win_rate_pct": 45.3,
+     "t_stat": -1.72,
+     "account_cagr_pct": -8.24,
+     "account_worst_fall_pct": -30.8,
+     "sharpe": -0.99
+    }
+   },
+   "test (2024-now)": {
+    "no cost": {
+     "trades": 2694,
+     "trades_per_year": 952.2,
+     "avg_net_pct": -0.01,
+     "win_rate_pct": 48.0,
+     "t_stat": -0.44,
+     "account_cagr_pct": -0.69,
+     "account_worst_fall_pct": -12.2,
+     "sharpe": -0.03
+    },
+    "realistic cost": {
+     "trades": 2694,
+     "trades_per_year": 952.2,
+     "avg_net_pct": -0.14,
+     "win_rate_pct": 41.3,
+     "t_stat": -6.43,
+     "account_cagr_pct": -18.23,
+     "account_worst_fall_pct": -43.7,
+     "sharpe": -2.14
+    },
+    "double cost": {
+     "trades": 2694,
+     "trades_per_year": 952.2,
+     "avg_net_pct": -0.27,
+     "win_rate_pct": 34.6,
+     "t_stat": -12.34,
+     "account_cagr_pct": -32.69,
+     "account_worst_fall_pct": -67.4,
+     "sharpe": -4.19
+    },
+    "ETFs only": {
+     "trades": 1146,
+     "trades_per_year": 405.0,
+     "avg_net_pct": -0.169,
+     "win_rate_pct": 37.6,
+     "t_stat": -7.57,
+     "account_cagr_pct": -14.11,
+     "account_worst_fall_pct": -35.4,
+     "sharpe": -3.15
+    },
+    "shares only": {
+     "trades": 1548,
+     "trades_per_year": 547.1,
+     "avg_net_pct": -0.118,
+     "win_rate_pct": 44.0,
+     "t_stat": -3.47,
+     "account_cagr_pct": -12.79,
+     "account_worst_fall_pct": -32.9,
+     "sharpe": -1.36
+    }
+   },
+   "test by year (avg net % per trade, realistic cost)": {
+    "2024": -0.207,
+    "2025": -0.072,
+    "2026": -0.142
+   },
+   "exit reasons (all)": {
+    "close": 3984,
+    "stop": 851
+   }
+  },
+  "Strong-morning momentum": {
+   "doc": "Momentum: at 12:00, if the price is up at least 0.7% from yesterday's close AND above VWAP, buy and hold to the close, stop at the day's low so far.",
+   "design (2020-23)": {
+    "no cost": {
+     "trades": 3191,
+     "trades_per_year": 989.1,
+     "avg_net_pct": -0.012,
+     "win_rate_pct": 46.1,
+     "t_stat": -0.96,
+     "account_cagr_pct": -6.26,
+     "account_worst_fall_pct": -22.0,
+     "sharpe": -0.97
+    },
+    "realistic cost": {
+     "trades": 3191,
+     "trades_per_year": 989.1,
+     "avg_net_pct": -0.113,
+     "win_rate_pct": 37.7,
+     "t_stat": -8.79,
+     "account_cagr_pct": -20.75,
+     "account_worst_fall_pct": -53.3,
+     "sharpe": -3.54
+    },
+    "double cost": {
+     "trades": 3191,
+     "trades_per_year": 989.1,
+     "avg_net_pct": -0.214,
+     "win_rate_pct": 30.8,
+     "t_stat": -16.46,
+     "account_cagr_pct": -33.01,
+     "account_worst_fall_pct": -72.6,
+     "sharpe": -5.98
+    },
+    "ETFs only": {
+     "trades": 1015,
+     "trades_per_year": 314.6,
+     "avg_net_pct": -0.16,
+     "win_rate_pct": 23.4,
+     "t_stat": -16.39,
+     "account_cagr_pct": -12.45,
+     "account_worst_fall_pct": -35.0,
+     "sharpe": -6.26
+    },
+    "shares only": {
+     "trades": 2176,
+     "trades_per_year": 674.5,
+     "avg_net_pct": -0.091,
+     "win_rate_pct": 44.4,
+     "t_stat": -4.98,
+     "account_cagr_pct": -15.04,
+     "account_worst_fall_pct": -41.5,
+     "sharpe": -2.31
+    }
+   },
+   "test (2024-now)": {
+    "no cost": {
+     "trades": 3635,
+     "trades_per_year": 1284.7,
+     "avg_net_pct": -0.023,
+     "win_rate_pct": 44.5,
+     "t_stat": -2.06,
+     "account_cagr_pct": -2.44,
+     "account_worst_fall_pct": -13.1,
+     "sharpe": -0.32
+    },
+    "realistic cost": {
+     "trades": 3635,
+     "trades_per_year": 1284.7,
+     "avg_net_pct": -0.15,
+     "win_rate_pct": 35.2,
+     "t_stat": -13.14,
+     "account_cagr_pct": -24.3,
+     "account_worst_fall_pct": -54.9,
+     "sharpe": -3.98
+    },
+    "double cost": {
+     "trades": 3635,
+     "trades_per_year": 1284.7,
+     "avg_net_pct": -0.277,
+     "win_rate_pct": 27.1,
+     "t_stat": -23.83,
+     "account_cagr_pct": -41.29,
+     "account_worst_fall_pct": -77.8,
+     "sharpe": -7.46
+    },
+    "ETFs only": {
+     "trades": 1514,
+     "trades_per_year": 535.1,
+     "avg_net_pct": -0.197,
+     "win_rate_pct": 25.4,
+     "t_stat": -19.43,
+     "account_cagr_pct": -21.05,
+     "account_worst_fall_pct": -48.8,
+     "sharpe": -6.93
+    },
+    "shares only": {
+     "trades": 2121,
+     "trades_per_year": 749.6,
+     "avg_net_pct": -0.117,
+     "win_rate_pct": 42.3,
+     "t_stat": -6.42,
+     "account_cagr_pct": -15.23,
+     "account_worst_fall_pct": -38.5,
+     "sharpe": -2.26
+    }
+   },
+   "test by year (avg net % per trade, realistic cost)": {
+    "2024": -0.123,
+    "2025": -0.164,
+    "2026": -0.164
+   },
+   "exit reasons (all)": {
+    "close": 5520,
+    "stop": 1306
+   }
+  },
+  "Baseline: in 10:15, out 15:55": {
+   "doc": "Yardstick, not a strategy: buy every day at 10:15, sell at 15:55. Shows the cost of just being in.",
+   "design (2020-23)": {
+    "no cost": {
+     "trades": 17707,
+     "trades_per_year": 5488.5,
+     "avg_net_pct": -0.007,
+     "win_rate_pct": 48.5,
+     "t_stat": -0.97,
+     "account_cagr_pct": -1.68,
+     "account_worst_fall_pct": -16.7,
+     "sharpe": -0.18
+    },
+    "realistic cost": {
+     "trades": 17707,
+     "trades_per_year": 5488.5,
+     "avg_net_pct": -0.115,
+     "win_rate_pct": 39.8,
+     "t_stat": -15.69,
+     "account_cagr_pct": -18.45,
+     "account_worst_fall_pct": -49.5,
+     "sharpe": -2.58
+    },
+    "double cost": {
+     "trades": 17707,
+     "trades_per_year": 5488.5,
+     "avg_net_pct": -0.222,
+     "win_rate_pct": 33.5,
+     "t_stat": -30.21,
+     "account_cagr_pct": -32.37,
+     "account_worst_fall_pct": -72.0,
+     "sharpe": -4.96
+    },
+    "ETFs only": {
+     "trades": 7842,
+     "trades_per_year": 2430.7,
+     "avg_net_pct": -0.158,
+     "win_rate_pct": 31.3,
+     "t_stat": -31.21,
+     "account_cagr_pct": -36.08,
+     "account_worst_fall_pct": -76.4,
+     "sharpe": -9.8
+    },
+    "shares only": {
+     "trades": 9865,
+     "trades_per_year": 3057.8,
+     "avg_net_pct": -0.08,
+     "win_rate_pct": 46.6,
+     "t_stat": -6.41,
+     "account_cagr_pct": -16.48,
+     "account_worst_fall_pct": -47.9,
+     "sharpe": -1.88
+    }
+   },
+   "test (2024-now)": {
+    "no cost": {
+     "trades": 21354,
+     "trades_per_year": 7547.3,
+     "avg_net_pct": -0.004,
+     "win_rate_pct": 48.9,
+     "t_stat": -0.62,
+     "account_cagr_pct": 4.78,
+     "account_worst_fall_pct": -9.2,
+     "sharpe": 0.76
+    },
+    "realistic cost": {
+     "trades": 21354,
+     "trades_per_year": 7547.3,
+     "avg_net_pct": -0.132,
+     "win_rate_pct": 38.8,
+     "t_stat": -21.87,
+     "account_cagr_pct": -14.25,
+     "account_worst_fall_pct": -36.4,
+     "sharpe": -2.37
+    },
+    "double cost": {
+     "trades": 21354,
+     "trades_per_year": 7547.3,
+     "avg_net_pct": -0.259,
+     "win_rate_pct": 30.6,
+     "t_stat": -42.6,
+     "account_cagr_pct": -29.84,
+     "account_worst_fall_pct": -63.7,
+     "sharpe": -5.49
+    },
+    "ETFs only": {
+     "trades": 11456,
+     "trades_per_year": 4049.0,
+     "avg_net_pct": -0.177,
+     "win_rate_pct": 30.8,
+     "t_stat": -36.44,
+     "account_cagr_pct": -30.75,
+     "account_worst_fall_pct": -64.6,
+     "sharpe": -11.02
+    },
+    "shares only": {
+     "trades": 9898,
+     "trades_per_year": 3498.3,
+     "avg_net_pct": -0.079,
+     "win_rate_pct": 47.9,
+     "t_stat": -6.8,
+     "account_cagr_pct": -13.74,
+     "account_worst_fall_pct": -35.7,
+     "sharpe": -1.52
+    }
+   },
+   "test by year (avg net % per trade, realistic cost)": {
+    "2024": -0.121,
+    "2025": -0.133,
+    "2026": -0.142
+   },
+   "exit reasons (all)": {
+    "close": 39061
+   }
+  }
+ }
+}
