@@ -252,5 +252,59 @@ def main():
     print("\n".join(lines))
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and len(sys.argv) <= 3:
     main()
+
+
+# ---------- follow-up (added after the first results; read as a check, not a new discovery) ----------
+# The RSI(2) dip rule lost nothing on ETFs but made money on the 14 big shares in BOTH periods.
+# This checks that finding: shares-only account, by year, at each cost, and with nearby settings,
+# so we read the spread rather than the best row.
+
+def followup(data_dir, out_dir):
+    raw = load(data_dir)
+    data = {t: indicators(d) for t, d in raw.items() if t in SHARES}
+    cal = pd.DatetimeIndex(sorted(set().union(*[set(d.index) for d in data.values()])))
+    cal = cal[cal >= pd.Timestamp(DESIGN[0])]
+    res = {"shares": sorted(data), "grid": {}}
+    for rsi_max in (5, 10, 15, 20):
+        for hold in (3, 5, 7):
+            rule = {"entry": (lambda m: lambda d: d["uptrend"] & (d["rsi2"] < m))(rsi_max),
+                    "exit": (lambda h: lambda d, e, i, px: d["c"].iat[i] > d["sma5"].iat[i] or i - e >= h - 1)(hold)}
+            tr = all_trades(data, rule)
+            tr["rank"] = [data[t]["rsi2"].loc[s] for t, s in zip(tr["ticker"], tr["signal"])]
+            key = f"RSI<{rsi_max}, max {hold} days"
+            row = {}
+            for lab, m in (("no cost", 0.0), ("realistic cost", 1.0), ("double cost", 2.0)):
+                eq = account(data, tr, m, cal)
+                for pn, (a, b) in (("design (2012-19)", DESIGN), ("test (2020-now)", TEST)):
+                    days = cal[(cal >= a) & (cal <= b)]
+                    part = tr[(tr["entry"] >= a) & (tr["entry"] <= b)]
+                    row[f"{pn} {lab}"] = {"every signal": trade_stats(part, m, len(days) / 252),
+                                          "account": acct_stats(eq[(eq.index >= a) & (eq.index <= b)])}
+                if lab == "realistic cost":
+                    yr = eq.groupby(eq.index.year).apply(lambda s: s.iloc[-1] / s.iloc[0] - 1)
+                    row["account by year (realistic cost)"] = {str(k): round(float(v) * 100, 1) for k, v in yr.items()}
+                    held = tr.assign(n=1).groupby("ticker")["gross"].agg(["count", "mean"])
+                    row["by share (avg gross %)"] = {t: [int(c), round(float(mn) * 100, 2)] for t, (c, mn) in held.iterrows()}
+            res["grid"][key] = row
+    # equal-weight buy and hold of the same 14 shares (rebalanced yearly), as the fair yardstick
+    px = pd.DataFrame({t: d["c"] for t, d in data.items()}).reindex(cal).ffill()
+    r = px.pct_change().mean(axis=1).fillna(0)
+    eq = (1 + r).cumprod()
+    res["yardstick: equal-weight hold of the same shares"] = {
+        pn: acct_stats(eq[(eq.index >= a) & (eq.index <= b)]) for pn, (a, b) in (("design", DESIGN), ("test", TEST))}
+    json.dump(res, open(os.path.join(out_dir, "swing_followup.json"), "w"), indent=1, default=str)
+    lines = ["| Shares only | Design avg/trade | Design %/yr | Test avg/trade | Test t | Test %/yr | Test worst fall |", "|---|---|---|---|---|---|---|"]
+    for k, row in res["grid"].items():
+        d, t = row["design (2012-19) realistic cost"], row["test (2020-now) realistic cost"]
+        lines.append(f"| {k} | {d['every signal'].get('avg_net_pct')}% | {d['account'].get('per_year_pct')}% | "
+                     f"{t['every signal'].get('avg_net_pct')}% | {t['every signal'].get('t_stat')} | {t['account'].get('per_year_pct')}% | {t['account'].get('worst_fall_pct')}% |")
+    y = res["yardstick: equal-weight hold of the same shares"]
+    lines.append(f"| Hold the same 14 shares | | {y['design'].get('per_year_pct')}% | | | {y['test'].get('per_year_pct')}% | {y['test'].get('worst_fall_pct')}% |")
+    open(os.path.join(out_dir, "swing_followup.md"), "w").write("\n".join(lines) + "\n")
+    print("\n".join(lines))
+
+
+if __name__ == "__main__" and len(sys.argv) > 3 and sys.argv[3] == "followup":
+    followup(sys.argv[1], sys.argv[2])

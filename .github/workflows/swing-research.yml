@@ -33,7 +33,9 @@ jobs:
           EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
         run: python research/swing_fetch.py daily
       - name: Run the backtest
-        run: python research/swing_backtest.py daily out
+        run: |
+          python research/swing_backtest.py daily out
+          python research/swing_backtest.py daily out followup
       - name: Save the prices to the private data repository
         env:
           DATA_REPO: ${{ secrets.DATA_REPO }}
@@ -53,7 +55,7 @@ jobs:
         if: always()
         run: |
           mkdir -p research/results
-          cp out/swing_backtest.json out/swing_backtest.md research/results/ 2>/dev/null || true
+          cp out/swing_*.json out/swing_*.md research/results/ 2>/dev/null || true
           python -c "import json,sys;d=json.load(open('daily/status.json'));json.dump({k:{'days':v['days'],'first':v['first'],'error':v['error']} for k,v in d.items()},open('research/results/swing_download_status.json','w'),indent=1)" || true
           git config user.name "signal-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
