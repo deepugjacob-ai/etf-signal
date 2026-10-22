@@ -1,0 +1,2036 @@
+{
+ "shares": [
+  "ANZ",
+  "BHP",
+  "CBA",
+  "CSL",
+  "FMG",
+  "MQG",
+  "NAB",
+  "PLS",
+  "RIO",
+  "TLS",
+  "WBC",
+  "WDS",
+  "WES",
+  "XRO"
+ ],
+ "grid": {
+  "RSI<5, max 3 days": {
+   "design (2012-19) no cost": {
+    "every signal": {
+     "trades": 422,
+     "per_year": 52.5,
+     "avg_net_pct": 0.232,
+     "win_pct": 57.8,
+     "t_stat": 1.91,
+     "avg_days": 2.6
+    },
+    "account": {
+     "per_year_pct": 2.3,
+     "worst_fall_pct": -8.4,
+     "sharpe": 0.55
+    }
+   },
+   "test (2020-now) no cost": {
+    "every signal": {
+     "trades": 372,
+     "per_year": 54.3,
+     "avg_net_pct": 0.259,
+     "win_pct": 57.8,
+     "t_stat": 1.52,
+     "avg_days": 2.6
+    },
+    "account": {
+     "per_year_pct": 2.51,
+     "worst_fall_pct": -8.7,
+     "sharpe": 0.45
+    }
+   },
+   "design (2012-19) realistic cost": {
+    "every signal": {
+     "trades": 422,
+     "per_year": 52.5,
+     "avg_net_pct": 0.152,
+     "win_pct": 56.4,
+     "t_stat": 1.25,
+     "avg_days": 2.6
+    },
+    "account": {
+     "per_year_pct": 1.47,
+     "worst_fall_pct": -9.3,
+     "sharpe": 0.36
+    }
+   },
+   "test (2020-now) realistic cost": {
+    "every signal": {
+     "trades": 372,
+     "per_year": 54.3,
+     "avg_net_pct": 0.179,
+     "win_pct": 56.7,
+     "t_stat": 1.05,
+     "avg_days": 2.6
+    },
+    "account": {
+     "per_year_pct": 1.62,
+     "worst_fall_pct": -9.3,
+     "sharpe": 0.31
+    }
+   },
+   "account by year (realistic cost)": {
+    "2012": 2.5,
+    "2013": 0.4,
+    "2014": -6.5,
+    "2015": 1.5,
+    "2016": 0.2,
+    "2017": 5.6,
+    "2018": 5.0,
+    "2019": 3.6,
+    "2020": -1.0,
+    "2021": 11.1,
+    "2022": -3.0,
+    "2023": 9.8,
+    "2024": -0.5,
+    "2025": -1.6,
+    "2026": -2.0
+   },
+   "by share (avg gross %)": {
+    "ANZ": [
+     70,
+     0.03
+    ],
+    "BHP": [
+     64,
+     0.02
+    ],
+    "CBA": [
+     63,
+     -0.46
+    ],
+    "CSL": [
+     62,
+     0.78
+    ],
+    "FMG": [
+     52,
+     1.51
+    ],
+    "MQG": [
+     65,
+     0.41
+    ],
+    "NAB": [
+     70,
+     -0.48
+    ],
+    "PLS": [
+     46,
+     1.87
+    ],
+    "RIO": [
+     61,
+     -0.03
+    ],
+    "TLS": [
+     59,
+     0.32
+    ],
+    "WBC": [
+     50,
+     0.18
+    ],
+    "WDS": [
+     62,
+     0.17
+    ],
+    "WES": [
+     71,
+     -0.2
+    ],
+    "XRO": [
+     42,
+     -0.07
+    ]
+   },
+   "design (2012-19) double cost": {
+    "every signal": {
+     "trades": 422,
+     "per_year": 52.5,
+     "avg_net_pct": 0.072,
+     "win_pct": 54.0,
+     "t_stat": 0.59,
+     "avg_days": 2.6
+    },
+    "account": {
+     "per_year_pct": 0.65,
+     "worst_fall_pct": -10.8,
+     "sharpe": 0.17
+    }
+   },
+   "test (2020-now) double cost": {
+    "every signal": {
+     "trades": 372,
+     "per_year": 54.3,
+     "avg_net_pct": 0.099,
+     "win_pct": 56.2,
+     "t_stat": 0.58,
+     "avg_days": 2.6
+    },
+    "account": {
+     "per_year_pct": 0.75,
+     "worst_fall_pct": -9.9,
+     "sharpe": 0.16
+    }
+   }
+  },
+  "RSI<5, max 5 days": {
+   "design (2012-19) no cost": {
+    "every signal": {
+     "trades": 394,
+     "per_year": 49.1,
+     "avg_net_pct": 0.237,
+     "win_pct": 62.7,
+     "t_stat": 1.65,
+     "avg_days": 3.4
+    },
+    "account": {
+     "per_year_pct": 2.2,
+     "worst_fall_pct": -11.0,
+     "sharpe": 0.47
+    }
+   },
+   "test (2020-now) no cost": {
+    "every signal": {
+     "trades": 350,
+     "per_year": 51.1,
+     "avg_net_pct": 0.421,
+     "win_pct": 62.0,
+     "t_stat": 2.19,
+     "avg_days": 3.4
+    },
+    "account": {
+     "per_year_pct": 4.01,
+     "worst_fall_pct": -10.6,
+     "sharpe": 0.64
+    }
+   },
+   "design (2012-19) realistic cost": {
+    "every signal": {
+     "trades": 394,
+     "per_year": 49.1,
+     "avg_net_pct": 0.157,
+     "win_pct": 61.7,
+     "t_stat": 1.09,
+     "avg_days": 3.4
+    },
+    "account": {
+     "per_year_pct": 1.43,
+     "worst_fall_pct": -12.9,
+     "sharpe": 0.32
+    }
+   },
+   "test (2020-now) realistic cost": {
+    "every signal": {
+     "trades": 350,
+     "per_year": 51.1,
+     "avg_net_pct": 0.341,
+     "win_pct": 60.6,
+     "t_stat": 1.77,
+     "avg_days": 3.4
+    },
+    "account": {
+     "per_year_pct": 3.16,
+     "worst_fall_pct": -11.3,
+     "sharpe": 0.51
+    }
+   },
+   "account by year (realistic cost)": {
+    "2012": 1.8,
+    "2013": -1.0,
+    "2014": -8.5,
+    "2015": 1.4,
+    "2016": 0.1,
+    "2017": 4.4,
+    "2018": 10.3,
+    "2019": 4.0,
+    "2020": 0.7,
+    "2021": 15.4,
+    "2022": -5.4,
+    "2023": 15.8,
+    "2024": -0.1,
+    "2025": -1.5,
+    "2026": -0.6
+   },
+   "by share (avg gross %)": {
+    "ANZ": [
+     66,
+     0.24
+    ],
+    "BHP": [
+     62,
+     0.45
+    ],
+    "CBA": [
+     59,
+     -0.62
+    ],
+    "CSL": [
+     59,
+     0.79
+    ],
+    "FMG": [
+     50,
+     1.5
+    ],
+    "MQG": [
+     62,
+     0.55
+    ],
+    "NAB": [
+     63,
+     -0.53
+    ],
+    "PLS": [
+     44,
+     2.4
+    ],
+    "RIO": [
+     58,
+     0.05
+    ],
+    "TLS": [
+     58,
+     0.55
+    ],
+    "WBC": [
+     46,
+     -0.26
+    ],
+    "WDS": [
+     54,
+     0.41
+    ],
+    "WES": [
+     65,
+     -0.37
+    ],
+    "XRO": [
+     38,
+     0.0
+    ]
+   },
+   "design (2012-19) double cost": {
+    "every signal": {
+     "trades": 394,
+     "per_year": 49.1,
+     "avg_net_pct": 0.077,
+     "win_pct": 58.9,
+     "t_stat": 0.54,
+     "avg_days": 3.4
+    },
+    "account": {
+     "per_year_pct": 0.65,
+     "worst_fall_pct": -14.7,
+     "sharpe": 0.16
+    }
+   },
+   "test (2020-now) double cost": {
+    "every signal": {
+     "trades": 350,
+     "per_year": 51.1,
+     "avg_net_pct": 0.261,
+     "win_pct": 60.3,
+     "t_stat": 1.36,
+     "avg_days": 3.4
+    },
+    "account": {
+     "per_year_pct": 2.33,
+     "worst_fall_pct": -12.0,
+     "sharpe": 0.39
+    }
+   }
+  },
+  "RSI<5, max 7 days": {
+   "design (2012-19) no cost": {
+    "every signal": {
+     "trades": 388,
+     "per_year": 48.3,
+     "avg_net_pct": 0.356,
+     "win_pct": 64.7,
+     "t_stat": 2.7,
+     "avg_days": 3.8
+    },
+    "account": {
+     "per_year_pct": 3.14,
+     "worst_fall_pct": -8.9,
+     "sharpe": 0.62
+    }
+   },
+   "test (2020-now) no cost": {
+    "every signal": {
+     "trades": 341,
+     "per_year": 49.8,
+     "avg_net_pct": 0.391,
+     "win_pct": 63.9,
+     "t_stat": 1.85,
+     "avg_days": 3.8
+    },
+    "account": {
+     "per_year_pct": 3.68,
+     "worst_fall_pct": -10.7,
+     "sharpe": 0.56
+    }
+   },
+   "design (2012-19) realistic cost": {
+    "every signal": {
+     "trades": 388,
+     "per_year": 48.3,
+     "avg_net_pct": 0.276,
+     "win_pct": 63.7,
+     "t_stat": 2.09,
+     "avg_days": 3.8
+    },
+    "account": {
+     "per_year_pct": 2.38,
+     "worst_fall_pct": -10.1,
+     "sharpe": 0.48
+    }
+   },
+   "test (2020-now) realistic cost": {
+    "every signal": {
+     "trades": 341,
+     "per_year": 49.8,
+     "avg_net_pct": 0.311,
+     "win_pct": 62.5,
+     "t_stat": 1.47,
+     "avg_days": 3.8
+    },
+    "account": {
+     "per_year_pct": 2.86,
+     "worst_fall_pct": -11.0,
+     "sharpe": 0.45
+    }
+   },
+   "account by year (realistic cost)": {
+    "2012": 1.9,
+    "2013": -0.2,
+    "2014": -6.1,
+    "2015": 1.4,
+    "2016": 2.1,
+    "2017": 5.1,
+    "2018": 10.9,
+    "2019": 4.6,
+    "2020": -0.8,
+    "2021": 19.7,
+    "2022": -8.1,
+    "2023": 12.6,
+    "2024": 2.4,
+    "2025": -0.8,
+    "2026": -2.7
+   },
+   "by share (avg gross %)": {
+    "ANZ": [
+     64,
+     0.26
+    ],
+    "BHP": [
+     61,
+     0.46
+    ],
+    "CBA": [
+     59,
+     -0.75
+    ],
+    "CSL": [
+     58,
+     0.94
+    ],
+    "FMG": [
+     49,
+     1.53
+    ],
+    "MQG": [
+     61,
+     0.55
+    ],
+    "NAB": [
+     61,
+     -0.58
+    ],
+    "PLS": [
+     42,
+     2.47
+    ],
+    "RIO": [
+     56,
+     0.08
+    ],
+    "TLS": [
+     56,
+     0.59
+    ],
+    "WBC": [
+     46,
+     -0.08
+    ],
+    "WDS": [
+     54,
+     0.47
+    ],
+    "WES": [
+     63,
+     -0.35
+    ],
+    "XRO": [
+     38,
+     0.38
+    ]
+   },
+   "design (2012-19) double cost": {
+    "every signal": {
+     "trades": 388,
+     "per_year": 48.3,
+     "avg_net_pct": 0.196,
+     "win_pct": 61.1,
+     "t_stat": 1.49,
+     "avg_days": 3.8
+    },
+    "account": {
+     "per_year_pct": 1.62,
+     "worst_fall_pct": -11.8,
+     "sharpe": 0.34
+    }
+   },
+   "test (2020-now) double cost": {
+    "every signal": {
+     "trades": 341,
+     "per_year": 49.8,
+     "avg_net_pct": 0.231,
+     "win_pct": 61.9,
+     "t_stat": 1.09,
+     "avg_days": 3.8
+    },
+    "account": {
+     "per_year_pct": 2.06,
+     "worst_fall_pct": -11.4,
+     "sharpe": 0.33
+    }
+   }
+  },
+  "RSI<10, max 3 days": {
+   "design (2012-19) no cost": {
+    "every signal": {
+     "trades": 873,
+     "per_year": 108.7,
+     "avg_net_pct": 0.381,
+     "win_pct": 58.4,
+     "t_stat": 4.18,
+     "avg_days": 2.6
+    },
+    "account": {
+     "per_year_pct": 7.86,
+     "worst_fall_pct": -6.2,
+     "sharpe": 1.21
+    }
+   },
+   "test (2020-now) no cost": {
+    "every signal": {
+     "trades": 737,
+     "per_year": 107.7,
+     "avg_net_pct": 0.307,
+     "win_pct": 58.5,
+     "t_stat": 2.78,
+     "avg_days": 2.6
+    },
+    "account": {
+     "per_year_pct": 5.4,
+     "worst_fall_pct": -13.8,
+     "sharpe": 0.7
+    }
+   },
+   "design (2012-19) realistic cost": {
+    "every signal": {
+     "trades": 873,
+     "per_year": 108.7,
+     "avg_net_pct": 0.301,
+     "win_pct": 56.8,
+     "t_stat": 3.3,
+     "avg_days": 2.6
+    },
+    "account": {
+     "per_year_pct": 6.15,
+     "worst_fall_pct": -7.2,
+     "sharpe": 0.96
+    }
+   },
+   "test (2020-now) realistic cost": {
+    "every signal": {
+     "trades": 737,
+     "per_year": 107.7,
+     "avg_net_pct": 0.227,
+     "win_pct": 57.3,
+     "t_stat": 2.06,
+     "avg_days": 2.6
+    },
+    "account": {
+     "per_year_pct": 3.69,
+     "worst_fall_pct": -16.1,
+     "sharpe": 0.49
+    }
+   },
+   "account by year (realistic cost)": {
+    "2012": 4.2,
+    "2013": 10.2,
+    "2014": -0.7,
+    "2015": 9.1,
+    "2016": 14.7,
+    "2017": 11.2,
+    "2018": -4.2,
+    "2019": 6.2,
+    "2020": 4.8,
+    "2021": 14.7,
+    "2022": -11.9,
+    "2023": 11.6,
+    "2024": 4.1,
+    "2025": -3.5,
+    "2026": 8.6
+   },
+   "by share (avg gross %)": {
+    "ANZ": [
+     134,
+     0.02
+    ],
+    "BHP": [
+     127,
+     0.2
+    ],
+    "CBA": [
+     127,
+     -0.11
+    ],
+    "CSL": [
+     128,
+     0.64
+    ],
+    "FMG": [
+     113,
+     1.07
+    ],
+    "MQG": [
+     137,
+     0.59
+    ],
+    "NAB": [
+     123,
+     -0.31
+    ],
+    "PLS": [
+     74,
+     2.49
+    ],
+    "RIO": [
+     125,
+     0.4
+    ],
+    "TLS": [
+     125,
+     0.22
+    ],
+    "WBC": [
+     104,
+     -0.25
+    ],
+    "WDS": [
+     125,
+     0.06
+    ],
+    "WES": [
+     163,
+     -0.1
+    ],
+    "XRO": [
+     83,
+     0.71
+    ]
+   },
+   "design (2012-19) double cost": {
+    "every signal": {
+     "trades": 873,
+     "per_year": 108.7,
+     "avg_net_pct": 0.221,
+     "win_pct": 55.6,
+     "t_stat": 2.42,
+     "avg_days": 2.6
+    },
+    "account": {
+     "per_year_pct": 4.47,
+     "worst_fall_pct": -8.3,
+     "sharpe": 0.71
+    }
+   },
+   "test (2020-now) double cost": {
+    "every signal": {
+     "trades": 737,
+     "per_year": 107.7,
+     "avg_net_pct": 0.147,
+     "win_pct": 55.6,
+     "t_stat": 1.33,
+     "avg_days": 2.6
+    },
+    "account": {
+     "per_year_pct": 2.01,
+     "worst_fall_pct": -18.2,
+     "sharpe": 0.29
+    }
+   }
+  },
+  "RSI<10, max 5 days": {
+   "design (2012-19) no cost": {
+    "every signal": {
+     "trades": 800,
+     "per_year": 99.6,
+     "avg_net_pct": 0.424,
+     "win_pct": 63.5,
+     "t_stat": 4.04,
+     "avg_days": 3.3
+    },
+    "account": {
+     "per_year_pct": 7.9,
+     "worst_fall_pct": -8.2,
+     "sharpe": 1.08
+    }
+   },
+   "test (2020-now) no cost": {
+    "every signal": {
+     "trades": 683,
+     "per_year": 99.8,
+     "avg_net_pct": 0.454,
+     "win_pct": 64.0,
+     "t_stat": 3.67,
+     "avg_days": 3.3
+    },
+    "account": {
+     "per_year_pct": 6.73,
+     "worst_fall_pct": -12.0,
+     "sharpe": 0.8
+    }
+   },
+   "design (2012-19) realistic cost": {
+    "every signal": {
+     "trades": 800,
+     "per_year": 99.6,
+     "avg_net_pct": 0.344,
+     "win_pct": 62.0,
+     "t_stat": 3.28,
+     "avg_days": 3.3
+    },
+    "account": {
+     "per_year_pct": 6.35,
+     "worst_fall_pct": -8.9,
+     "sharpe": 0.88
+    }
+   },
+   "test (2020-now) realistic cost": {
+    "every signal": {
+     "trades": 683,
+     "per_year": 99.8,
+     "avg_net_pct": 0.374,
+     "win_pct": 63.0,
+     "t_stat": 3.02,
+     "avg_days": 3.3
+    },
+    "account": {
+     "per_year_pct": 5.15,
+     "worst_fall_pct": -12.1,
+     "sharpe": 0.63
+    }
+   },
+   "account by year (realistic cost)": {
+    "2012": 3.3,
+    "2013": 9.7,
+    "2014": -2.1,
+    "2015": 5.8,
+    "2016": 9.6,
+    "2017": 10.8,
+    "2018": 3.3,
+    "2019": 11.4,
+    "2020": 7.8,
+    "2021": 14.7,
+    "2022": -2.9,
+    "2023": 15.4,
+    "2024": 4.7,
+    "2025": -3.2,
+    "2026": 1.7
+   },
+   "by share (avg gross %)": {
+    "ANZ": [
+     125,
+     0.07
+    ],
+    "BHP": [
+     116,
+     0.49
+    ],
+    "CBA": [
+     116,
+     0.05
+    ],
+    "CSL": [
+     118,
+     0.74
+    ],
+    "FMG": [
+     104,
+     1.12
+    ],
+    "MQG": [
+     131,
+     0.85
+    ],
+    "NAB": [
+     114,
+     -0.35
+    ],
+    "PLS": [
+     68,
+     2.96
+    ],
+    "RIO": [
+     115,
+     0.49
+    ],
+    "TLS": [
+     120,
+     0.35
+    ],
+    "WBC": [
+     95,
+     -0.36
+    ],
+    "WDS": [
+     111,
+     0.19
+    ],
+    "WES": [
+     150,
+     -0.15
+    ],
+    "XRO": [
+     75,
+     0.71
+    ]
+   },
+   "design (2012-19) double cost": {
+    "every signal": {
+     "trades": 800,
+     "per_year": 99.6,
+     "avg_net_pct": 0.264,
+     "win_pct": 60.1,
+     "t_stat": 2.52,
+     "avg_days": 3.3
+    },
+    "account": {
+     "per_year_pct": 4.83,
+     "worst_fall_pct": -9.7,
+     "sharpe": 0.68
+    }
+   },
+   "test (2020-now) double cost": {
+    "every signal": {
+     "trades": 683,
+     "per_year": 99.8,
+     "avg_net_pct": 0.294,
+     "win_pct": 61.3,
+     "t_stat": 2.37,
+     "avg_days": 3.3
+    },
+    "account": {
+     "per_year_pct": 3.6,
+     "worst_fall_pct": -13.4,
+     "sharpe": 0.46
+    }
+   }
+  },
+  "RSI<10, max 7 days": {
+   "design (2012-19) no cost": {
+    "every signal": {
+     "trades": 771,
+     "per_year": 96.0,
+     "avg_net_pct": 0.468,
+     "win_pct": 64.3,
+     "t_stat": 4.58,
+     "avg_days": 3.7
+    },
+    "account": {
+     "per_year_pct": 8.02,
+     "worst_fall_pct": -7.0,
+     "sharpe": 1.08
+    }
+   },
+   "test (2020-now) no cost": {
+    "every signal": {
+     "trades": 657,
+     "per_year": 96.0,
+     "avg_net_pct": 0.466,
+     "win_pct": 65.0,
+     "t_stat": 3.33,
+     "avg_days": 3.7
+    },
+    "account": {
+     "per_year_pct": 7.06,
+     "worst_fall_pct": -15.3,
+     "sharpe": 0.83
+    }
+   },
+   "design (2012-19) realistic cost": {
+    "every signal": {
+     "trades": 771,
+     "per_year": 96.0,
+     "avg_net_pct": 0.388,
+     "win_pct": 62.9,
+     "t_stat": 3.8,
+     "avg_days": 3.7
+    },
+    "account": {
+     "per_year_pct": 6.55,
+     "worst_fall_pct": -7.3,
+     "sharpe": 0.89
+    }
+   },
+   "test (2020-now) realistic cost": {
+    "every signal": {
+     "trades": 657,
+     "per_year": 96.0,
+     "avg_net_pct": 0.386,
+     "win_pct": 64.1,
+     "t_stat": 2.76,
+     "avg_days": 3.7
+    },
+    "account": {
+     "per_year_pct": 5.56,
+     "worst_fall_pct": -16.4,
+     "sharpe": 0.67
+    }
+   },
+   "account by year (realistic cost)": {
+    "2012": 1.2,
+    "2013": 9.7,
+    "2014": -2.4,
+    "2015": 8.3,
+    "2016": 10.6,
+    "2017": 8.0,
+    "2018": 5.0,
+    "2019": 13.2,
+    "2020": 7.5,
+    "2021": 11.6,
+    "2022": -8.0,
+    "2023": 17.3,
+    "2024": 7.3,
+    "2025": -1.1,
+    "2026": 6.2
+   },
+   "by share (avg gross %)": {
+    "ANZ": [
+     118,
+     0.02
+    ],
+    "BHP": [
+     114,
+     0.53
+    ],
+    "CBA": [
+     112,
+     -0.14
+    ],
+    "CSL": [
+     114,
+     0.84
+    ],
+    "FMG": [
+     103,
+     1.18
+    ],
+    "MQG": [
+     128,
+     0.77
+    ],
+    "NAB": [
+     109,
+     -0.45
+    ],
+    "PLS": [
+     62,
+     3.48
+    ],
+    "RIO": [
+     112,
+     0.53
+    ],
+    "TLS": [
+     118,
+     0.46
+    ],
+    "WBC": [
+     89,
+     -0.37
+    ],
+    "WDS": [
+     108,
+     0.25
+    ],
+    "WES": [
+     141,
+     -0.13
+    ],
+    "XRO": [
+     73,
+     0.7
+    ]
+   },
+   "design (2012-19) double cost": {
+    "every signal": {
+     "trades": 771,
+     "per_year": 96.0,
+     "avg_net_pct": 0.308,
+     "win_pct": 61.1,
+     "t_stat": 3.01,
+     "avg_days": 3.7
+    },
+    "account": {
+     "per_year_pct": 5.1,
+     "worst_fall_pct": -7.6,
+     "sharpe": 0.71
+    }
+   },
+   "test (2020-now) double cost": {
+    "every signal": {
+     "trades": 657,
+     "per_year": 96.0,
+     "avg_net_pct": 0.306,
+     "win_pct": 62.7,
+     "t_stat": 2.19,
+     "avg_days": 3.7
+    },
+    "account": {
+     "per_year_pct": 4.08,
+     "worst_fall_pct": -17.7,
+     "sharpe": 0.5
+    }
+   }
+  },
+  "RSI<15, max 3 days": {
+   "design (2012-19) no cost": {
+    "every signal": {
+     "trades": 1257,
+     "per_year": 156.5,
+     "avg_net_pct": 0.198,
+     "win_pct": 58.9,
+     "t_stat": 2.69,
+     "avg_days": 2.5
+    },
+    "account": {
+     "per_year_pct": 4.88,
+     "worst_fall_pct": -13.7,
+     "sharpe": 0.66
+    }
+   },
+   "test (2020-now) no cost": {
+    "every signal": {
+     "trades": 1071,
+     "per_year": 156.5,
+     "avg_net_pct": 0.266,
+     "win_pct": 60.5,
+     "t_stat": 2.99,
+     "avg_days": 2.5
+    },
+    "account": {
+     "per_year_pct": 6.79,
+     "worst_fall_pct": -13.1,
+     "sharpe": 0.74
+    }
+   },
+   "design (2012-19) realistic cost": {
+    "every signal": {
+     "trades": 1257,
+     "per_year": 156.5,
+     "avg_net_pct": 0.118,
+     "win_pct": 57.4,
+     "t_stat": 1.6,
+     "avg_days": 2.5
+    },
+    "account": {
+     "per_year_pct": 2.59,
+     "worst_fall_pct": -15.5,
+     "sharpe": 0.37
+    }
+   },
+   "test (2020-now) realistic cost": {
+    "every signal": {
+     "trades": 1071,
+     "per_year": 156.5,
+     "avg_net_pct": 0.186,
+     "win_pct": 58.8,
+     "t_stat": 2.09,
+     "avg_days": 2.5
+    },
+    "account": {
+     "per_year_pct": 4.38,
+     "worst_fall_pct": -15.3,
+     "sharpe": 0.5
+    }
+   },
+   "account by year (realistic cost)": {
+    "2012": 2.6,
+    "2013": 9.8,
+    "2014": -3.8,
+    "2015": -1.5,
+    "2016": 12.1,
+    "2017": 8.2,
+    "2018": -14.7,
+    "2019": 11.2,
+    "2020": 23.4,
+    "2021": 6.9,
+    "2022": -7.8,
+    "2023": 7.0,
+    "2024": -0.1,
+    "2025": -2.5,
+    "2026": 5.9
+   },
+   "by share (avg gross %)": {
+    "ANZ": [
+     181,
+     0.05
+    ],
+    "BHP": [
+     194,
+     0.22
+    ],
+    "CBA": [
+     186,
+     -0.09
+    ],
+    "CSL": [
+     183,
+     0.64
+    ],
+    "FMG": [
+     171,
+     0.76
+    ],
+    "MQG": [
+     215,
+     0.31
+    ],
+    "NAB": [
+     174,
+     -0.25
+    ],
+    "PLS": [
+     101,
+     1.01
+    ],
+    "RIO": [
+     180,
+     0.31
+    ],
+    "TLS": [
+     183,
+     0.2
+    ],
+    "WBC": [
+     166,
+     -0.09
+    ],
+    "WDS": [
+     174,
+     0.14
+    ],
+    "WES": [
+     226,
+     -0.05
+    ],
+    "XRO": [
+     116,
+     0.46
+    ]
+   },
+   "design (2012-19) double cost": {
+    "every signal": {
+     "trades": 1257,
+     "per_year": 156.5,
+     "avg_net_pct": 0.038,
+     "win_pct": 55.9,
+     "t_stat": 0.52,
+     "avg_days": 2.5
+    },
+    "account": {
+     "per_year_pct": 0.34,
+     "worst_fall_pct": -18.2,
+     "sharpe": 0.08
+    }
+   },
+   "test (2020-now) double cost": {
+    "every signal": {
+     "trades": 1071,
+     "per_year": 156.5,
+     "avg_net_pct": 0.106,
+     "win_pct": 57.1,
+     "t_stat": 1.19,
+     "avg_days": 2.5
+    },
+    "account": {
+     "per_year_pct": 2.02,
+     "worst_fall_pct": -18.5,
+     "sharpe": 0.26
+    }
+   }
+  },
+  "RSI<15, max 5 days": {
+   "design (2012-19) no cost": {
+    "every signal": {
+     "trades": 1124,
+     "per_year": 139.9,
+     "avg_net_pct": 0.299,
+     "win_pct": 62.6,
+     "t_stat": 3.62,
+     "avg_days": 3.3
+    },
+    "account": {
+     "per_year_pct": 7.84,
+     "worst_fall_pct": -8.9,
+     "sharpe": 0.94
+    }
+   },
+   "test (2020-now) no cost": {
+    "every signal": {
+     "trades": 982,
+     "per_year": 143.5,
+     "avg_net_pct": 0.348,
+     "win_pct": 64.5,
+     "t_stat": 3.42,
+     "avg_days": 3.3
+    },
+    "account": {
+     "per_year_pct": 7.39,
+     "worst_fall_pct": -15.5,
+     "sharpe": 0.74
+    }
+   },
+   "design (2012-19) realistic cost": {
+    "every signal": {
+     "trades": 1124,
+     "per_year": 139.9,
+     "avg_net_pct": 0.219,
+     "win_pct": 60.8,
+     "t_stat": 2.65,
+     "avg_days": 3.3
+    },
+    "account": {
+     "per_year_pct": 5.8,
+     "worst_fall_pct": -11.1,
+     "sharpe": 0.71
+    }
+   },
+   "test (2020-now) realistic cost": {
+    "every signal": {
+     "trades": 982,
+     "per_year": 143.5,
+     "avg_net_pct": 0.268,
+     "win_pct": 63.2,
+     "t_stat": 2.64,
+     "avg_days": 3.3
+    },
+    "account": {
+     "per_year_pct": 5.24,
+     "worst_fall_pct": -17.1,
+     "sharpe": 0.54
+    }
+   },
+   "account by year (realistic cost)": {
+    "2012": 3.1,
+    "2013": 10.5,
+    "2014": -4.0,
+    "2015": -0.4,
+    "2016": 14.3,
+    "2017": 13.5,
+    "2018": -3.9,
+    "2019": 15.9,
+    "2020": 19.5,
+    "2021": 10.7,
+    "2022": -4.5,
+    "2023": 10.0,
+    "2024": -0.4,
+    "2025": 3.1,
+    "2026": 0.3
+   },
+   "by share (avg gross %)": {
+    "ANZ": [
+     162,
+     0.03
+    ],
+    "BHP": [
+     178,
+     0.33
+    ],
+    "CBA": [
+     172,
+     0.12
+    ],
+    "CSL": [
+     166,
+     0.79
+    ],
+    "FMG": [
+     151,
+     0.95
+    ],
+    "MQG": [
+     195,
+     0.53
+    ],
+    "NAB": [
+     158,
+     -0.27
+    ],
+    "PLS": [
+     94,
+     1.25
+    ],
+    "RIO": [
+     163,
+     0.37
+    ],
+    "TLS": [
+     169,
+     0.28
+    ],
+    "WBC": [
+     152,
+     -0.22
+    ],
+    "WDS": [
+     155,
+     0.32
+    ],
+    "WES": [
+     200,
+     -0.15
+    ],
+    "XRO": [
+     104,
+     0.7
+    ]
+   },
+   "design (2012-19) double cost": {
+    "every signal": {
+     "trades": 1124,
+     "per_year": 139.9,
+     "avg_net_pct": 0.139,
+     "win_pct": 58.9,
+     "t_stat": 1.68,
+     "avg_days": 3.3
+    },
+    "account": {
+     "per_year_pct": 3.8,
+     "worst_fall_pct": -13.4,
+     "sharpe": 0.49
+    }
+   },
+   "test (2020-now) double cost": {
+    "every signal": {
+     "trades": 982,
+     "per_year": 143.5,
+     "avg_net_pct": 0.188,
+     "win_pct": 61.9,
+     "t_stat": 1.85,
+     "avg_days": 3.3
+    },
+    "account": {
+     "per_year_pct": 3.13,
+     "worst_fall_pct": -18.8,
+     "sharpe": 0.35
+    }
+   }
+  },
+  "RSI<15, max 7 days": {
+   "design (2012-19) no cost": {
+    "every signal": {
+     "trades": 1069,
+     "per_year": 133.1,
+     "avg_net_pct": 0.288,
+     "win_pct": 63.3,
+     "t_stat": 3.34,
+     "avg_days": 3.7
+    },
+    "account": {
+     "per_year_pct": 7.14,
+     "worst_fall_pct": -9.9,
+     "sharpe": 0.86
+    }
+   },
+   "test (2020-now) no cost": {
+    "every signal": {
+     "trades": 941,
+     "per_year": 137.5,
+     "avg_net_pct": 0.39,
+     "win_pct": 66.0,
+     "t_stat": 3.45,
+     "avg_days": 3.7
+    },
+    "account": {
+     "per_year_pct": 8.56,
+     "worst_fall_pct": -16.9,
+     "sharpe": 0.83
+    }
+   },
+   "design (2012-19) realistic cost": {
+    "every signal": {
+     "trades": 1069,
+     "per_year": 133.1,
+     "avg_net_pct": 0.208,
+     "win_pct": 61.5,
+     "t_stat": 2.41,
+     "avg_days": 3.7
+    },
+    "account": {
+     "per_year_pct": 5.24,
+     "worst_fall_pct": -12.0,
+     "sharpe": 0.65
+    }
+   },
+   "test (2020-now) realistic cost": {
+    "every signal": {
+     "trades": 941,
+     "per_year": 137.5,
+     "avg_net_pct": 0.31,
+     "win_pct": 64.9,
+     "t_stat": 2.74,
+     "avg_days": 3.7
+    },
+    "account": {
+     "per_year_pct": 6.52,
+     "worst_fall_pct": -18.5,
+     "sharpe": 0.65
+    }
+   },
+   "account by year (realistic cost)": {
+    "2012": 0.5,
+    "2013": 11.9,
+    "2014": -6.7,
+    "2015": 1.0,
+    "2016": 14.5,
+    "2017": 10.5,
+    "2018": -5.5,
+    "2019": 18.9,
+    "2020": 20.1,
+    "2021": 7.9,
+    "2022": -6.3,
+    "2023": 12.9,
+    "2024": 4.6,
+    "2025": 5.0,
+    "2026": 2.4
+   },
+   "by share (avg gross %)": {
+    "ANZ": [
+     153,
+     -0.01
+    ],
+    "BHP": [
+     171,
+     0.36
+    ],
+    "CBA": [
+     163,
+     -0.01
+    ],
+    "CSL": [
+     159,
+     0.84
+    ],
+    "FMG": [
+     146,
+     1.02
+    ],
+    "MQG": [
+     192,
+     0.52
+    ],
+    "NAB": [
+     150,
+     -0.33
+    ],
+    "PLS": [
+     86,
+     1.64
+    ],
+    "RIO": [
+     160,
+     0.48
+    ],
+    "TLS": [
+     163,
+     0.36
+    ],
+    "WBC": [
+     146,
+     -0.21
+    ],
+    "WDS": [
+     146,
+     0.27
+    ],
+    "WES": [
+     185,
+     -0.17
+    ],
+    "XRO": [
+     100,
+     0.51
+    ]
+   },
+   "design (2012-19) double cost": {
+    "every signal": {
+     "trades": 1069,
+     "per_year": 133.1,
+     "avg_net_pct": 0.128,
+     "win_pct": 59.3,
+     "t_stat": 1.48,
+     "avg_days": 3.7
+    },
+    "account": {
+     "per_year_pct": 3.37,
+     "worst_fall_pct": -14.3,
+     "sharpe": 0.43
+    }
+   },
+   "test (2020-now) double cost": {
+    "every signal": {
+     "trades": 941,
+     "per_year": 137.5,
+     "avg_net_pct": 0.23,
+     "win_pct": 63.8,
+     "t_stat": 2.03,
+     "avg_days": 3.7
+    },
+    "account": {
+     "per_year_pct": 4.52,
+     "worst_fall_pct": -20.0,
+     "sharpe": 0.47
+    }
+   }
+  },
+  "RSI<20, max 3 days": {
+   "design (2012-19) no cost": {
+    "every signal": {
+     "trades": 1546,
+     "per_year": 192.5,
+     "avg_net_pct": 0.173,
+     "win_pct": 58.6,
+     "t_stat": 2.74,
+     "avg_days": 2.5
+    },
+    "account": {
+     "per_year_pct": 5.75,
+     "worst_fall_pct": -10.1,
+     "sharpe": 0.72
+    }
+   },
+   "test (2020-now) no cost": {
+    "every signal": {
+     "trades": 1346,
+     "per_year": 196.6,
+     "avg_net_pct": 0.217,
+     "win_pct": 59.7,
+     "t_stat": 2.74,
+     "avg_days": 2.5
+    },
+    "account": {
+     "per_year_pct": 8.47,
+     "worst_fall_pct": -16.8,
+     "sharpe": 0.84
+    }
+   },
+   "design (2012-19) realistic cost": {
+    "every signal": {
+     "trades": 1546,
+     "per_year": 192.5,
+     "avg_net_pct": 0.093,
+     "win_pct": 56.6,
+     "t_stat": 1.47,
+     "avg_days": 2.5
+    },
+    "account": {
+     "per_year_pct": 2.94,
+     "worst_fall_pct": -14.4,
+     "sharpe": 0.39
+    }
+   },
+   "test (2020-now) realistic cost": {
+    "every signal": {
+     "trades": 1346,
+     "per_year": 196.6,
+     "avg_net_pct": 0.137,
+     "win_pct": 57.8,
+     "t_stat": 1.73,
+     "avg_days": 2.5
+    },
+    "account": {
+     "per_year_pct": 5.48,
+     "worst_fall_pct": -19.0,
+     "sharpe": 0.57
+    }
+   },
+   "account by year (realistic cost)": {
+    "2012": 2.3,
+    "2013": 6.1,
+    "2014": -7.5,
+    "2015": -0.8,
+    "2016": 10.0,
+    "2017": 6.5,
+    "2018": -8.5,
+    "2019": 18.2,
+    "2020": 25.8,
+    "2021": 3.0,
+    "2022": -8.2,
+    "2023": 5.8,
+    "2024": 2.9,
+    "2025": 3.8,
+    "2026": 7.3
+   },
+   "by share (avg gross %)": {
+    "ANZ": [
+     235,
+     -0.0
+    ],
+    "BHP": [
+     244,
+     0.28
+    ],
+    "CBA": [
+     233,
+     -0.12
+    ],
+    "CSL": [
+     239,
+     0.45
+    ],
+    "FMG": [
+     208,
+     0.84
+    ],
+    "MQG": [
+     266,
+     0.29
+    ],
+    "NAB": [
+     222,
+     -0.21
+    ],
+    "PLS": [
+     119,
+     0.69
+    ],
+    "RIO": [
+     220,
+     0.13
+    ],
+    "TLS": [
+     226,
+     0.21
+    ],
+    "WBC": [
+     212,
+     -0.0
+    ],
+    "WDS": [
+     210,
+     0.21
+    ],
+    "WES": [
+     275,
+     -0.09
+    ],
+    "XRO": [
+     143,
+     0.27
+    ]
+   },
+   "design (2012-19) double cost": {
+    "every signal": {
+     "trades": 1546,
+     "per_year": 192.5,
+     "avg_net_pct": 0.013,
+     "win_pct": 54.9,
+     "t_stat": 0.2,
+     "avg_days": 2.5
+    },
+    "account": {
+     "per_year_pct": 0.21,
+     "worst_fall_pct": -18.8,
+     "sharpe": 0.07
+    }
+   },
+   "test (2020-now) double cost": {
+    "every signal": {
+     "trades": 1346,
+     "per_year": 196.6,
+     "avg_net_pct": 0.057,
+     "win_pct": 56.6,
+     "t_stat": 0.72,
+     "avg_days": 2.5
+    },
+    "account": {
+     "per_year_pct": 2.57,
+     "worst_fall_pct": -22.6,
+     "sharpe": 0.3
+    }
+   }
+  },
+  "RSI<20, max 5 days": {
+   "design (2012-19) no cost": {
+    "every signal": {
+     "trades": 1379,
+     "per_year": 171.7,
+     "avg_net_pct": 0.301,
+     "win_pct": 62.8,
+     "t_stat": 4.11,
+     "avg_days": 3.3
+    },
+    "account": {
+     "per_year_pct": 9.29,
+     "worst_fall_pct": -9.1,
+     "sharpe": 1.02
+    }
+   },
+   "test (2020-now) no cost": {
+    "every signal": {
+     "trades": 1224,
+     "per_year": 178.8,
+     "avg_net_pct": 0.322,
+     "win_pct": 64.2,
+     "t_stat": 3.52,
+     "avg_days": 3.2
+    },
+    "account": {
+     "per_year_pct": 8.69,
+     "worst_fall_pct": -19.6,
+     "sharpe": 0.81
+    }
+   },
+   "design (2012-19) realistic cost": {
+    "every signal": {
+     "trades": 1379,
+     "per_year": 171.7,
+     "avg_net_pct": 0.221,
+     "win_pct": 61.4,
+     "t_stat": 3.02,
+     "avg_days": 3.3
+    },
+    "account": {
+     "per_year_pct": 6.81,
+     "worst_fall_pct": -10.5,
+     "sharpe": 0.77
+    }
+   },
+   "test (2020-now) realistic cost": {
+    "every signal": {
+     "trades": 1224,
+     "per_year": 178.8,
+     "avg_net_pct": 0.242,
+     "win_pct": 62.4,
+     "t_stat": 2.65,
+     "avg_days": 3.2
+    },
+    "account": {
+     "per_year_pct": 6.1,
+     "worst_fall_pct": -21.6,
+     "sharpe": 0.59
+    }
+   },
+   "account by year (realistic cost)": {
+    "2012": 4.7,
+    "2013": 11.5,
+    "2014": -6.9,
+    "2015": 3.6,
+    "2016": 17.1,
+    "2017": 12.2,
+    "2018": -4.2,
+    "2019": 20.1,
+    "2020": 21.5,
+    "2021": 5.6,
+    "2022": -4.4,
+    "2023": 12.2,
+    "2024": 2.0,
+    "2025": 4.7,
+    "2026": 2.7
+   },
+   "by share (avg gross %)": {
+    "ANZ": [
+     206,
+     -0.09
+    ],
+    "BHP": [
+     223,
+     0.33
+    ],
+    "CBA": [
+     216,
+     0.07
+    ],
+    "CSL": [
+     217,
+     0.61
+    ],
+    "FMG": [
+     187,
+     1.11
+    ],
+    "MQG": [
+     240,
+     0.48
+    ],
+    "NAB": [
+     198,
+     -0.27
+    ],
+    "PLS": [
+     109,
+     1.14
+    ],
+    "RIO": [
+     197,
+     0.3
+    ],
+    "TLS": [
+     204,
+     0.28
+    ],
+    "WBC": [
+     193,
+     -0.04
+    ],
+    "WDS": [
+     184,
+     0.28
+    ],
+    "WES": [
+     245,
+     -0.08
+    ],
+    "XRO": [
+     129,
+     0.58
+    ]
+   },
+   "design (2012-19) double cost": {
+    "every signal": {
+     "trades": 1379,
+     "per_year": 171.7,
+     "avg_net_pct": 0.141,
+     "win_pct": 59.5,
+     "t_stat": 1.93,
+     "avg_days": 3.3
+    },
+    "account": {
+     "per_year_pct": 4.39,
+     "worst_fall_pct": -13.2,
+     "sharpe": 0.52
+    }
+   },
+   "test (2020-now) double cost": {
+    "every signal": {
+     "trades": 1224,
+     "per_year": 178.8,
+     "avg_net_pct": 0.162,
+     "win_pct": 61.4,
+     "t_stat": 1.77,
+     "avg_days": 3.2
+    },
+    "account": {
+     "per_year_pct": 3.58,
+     "worst_fall_pct": -23.4,
+     "sharpe": 0.37
+    }
+   }
+  },
+  "RSI<20, max 7 days": {
+   "design (2012-19) no cost": {
+    "every signal": {
+     "trades": 1300,
+     "per_year": 161.9,
+     "avg_net_pct": 0.271,
+     "win_pct": 63.5,
+     "t_stat": 3.48,
+     "avg_days": 3.7
+    },
+    "account": {
+     "per_year_pct": 8.48,
+     "worst_fall_pct": -11.0,
+     "sharpe": 0.92
+    }
+   },
+   "test (2020-now) no cost": {
+    "every signal": {
+     "trades": 1164,
+     "per_year": 170.0,
+     "avg_net_pct": 0.343,
+     "win_pct": 65.4,
+     "t_stat": 3.44,
+     "avg_days": 3.6
+    },
+    "account": {
+     "per_year_pct": 9.63,
+     "worst_fall_pct": -21.8,
+     "sharpe": 0.87
+    }
+   },
+   "design (2012-19) realistic cost": {
+    "every signal": {
+     "trades": 1300,
+     "per_year": 161.9,
+     "avg_net_pct": 0.191,
+     "win_pct": 62.1,
+     "t_stat": 2.45,
+     "avg_days": 3.7
+    },
+    "account": {
+     "per_year_pct": 6.2,
+     "worst_fall_pct": -12.2,
+     "sharpe": 0.69
+    }
+   },
+   "test (2020-now) realistic cost": {
+    "every signal": {
+     "trades": 1164,
+     "per_year": 170.0,
+     "avg_net_pct": 0.263,
+     "win_pct": 63.7,
+     "t_stat": 2.64,
+     "avg_days": 3.6
+    },
+    "account": {
+     "per_year_pct": 7.2,
+     "worst_fall_pct": -23.5,
+     "sharpe": 0.67
+    }
+   },
+   "account by year (realistic cost)": {
+    "2012": 2.4,
+    "2013": 10.8,
+    "2014": -7.4,
+    "2015": 5.0,
+    "2016": 15.8,
+    "2017": 9.5,
+    "2018": -6.7,
+    "2019": 24.2,
+    "2020": 22.5,
+    "2021": 1.6,
+    "2022": -6.2,
+    "2023": 14.6,
+    "2024": 7.9,
+    "2025": 7.0,
+    "2026": 4.4
+   },
+   "by share (avg gross %)": {
+    "ANZ": [
+     194,
+     -0.07
+    ],
+    "BHP": [
+     212,
+     0.34
+    ],
+    "CBA": [
+     203,
+     -0.01
+    ],
+    "CSL": [
+     205,
+     0.59
+    ],
+    "FMG": [
+     176,
+     1.15
+    ],
+    "MQG": [
+     233,
+     0.5
+    ],
+    "NAB": [
+     187,
+     -0.32
+    ],
+    "PLS": [
+     101,
+     1.34
+    ],
+    "RIO": [
+     191,
+     0.34
+    ],
+    "TLS": [
+     196,
+     0.37
+    ],
+    "WBC": [
+     185,
+     -0.05
+    ],
+    "WDS": [
+     171,
+     0.29
+    ],
+    "WES": [
+     225,
+     -0.15
+    ],
+    "XRO": [
+     123,
+     0.4
+    ]
+   },
+   "design (2012-19) double cost": {
+    "every signal": {
+     "trades": 1300,
+     "per_year": 161.9,
+     "avg_net_pct": 0.111,
+     "win_pct": 59.9,
+     "t_stat": 1.42,
+     "avg_days": 3.7
+    },
+    "account": {
+     "per_year_pct": 3.97,
+     "worst_fall_pct": -13.6,
+     "sharpe": 0.46
+    }
+   },
+   "test (2020-now) double cost": {
+    "every signal": {
+     "trades": 1164,
+     "per_year": 170.0,
+     "avg_net_pct": 0.183,
+     "win_pct": 62.6,
+     "t_stat": 1.84,
+     "avg_days": 3.6
+    },
+    "account": {
+     "per_year_pct": 4.83,
+     "worst_fall_pct": -25.2,
+     "sharpe": 0.47
+    }
+   }
+  }
+ },
+ "yardstick: equal-weight hold of the same shares": {
+  "design": {
+   "per_year_pct": 23.05,
+   "worst_fall_pct": -14.6,
+   "sharpe": 1.37
+  },
+  "test": {
+   "per_year_pct": 15.76,
+   "worst_fall_pct": -36.7,
+   "sharpe": 0.88
+  }
+ }
+}
