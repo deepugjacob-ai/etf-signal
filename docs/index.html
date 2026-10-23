@@ -56,6 +56,13 @@ nav button[aria-selected="true"]{background:var(--navy);color:var(--surface)}
 .banner{border-radius:12px;padding:12px 14px;margin-bottom:16px;font-size:.95rem}
 .banner.err{background:var(--sell-bg);color:var(--sell)}
 .banner.warn{background:var(--ochre-bg);color:var(--ochre)}
+.banner.ok{background:var(--buy-bg);color:var(--buy)}
+.implist{list-style:none;margin:0;padding:0}
+.implist li{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:6px 10px;border-top:1px solid var(--line);padding:9px 0;font-size:.92rem}
+.implist li:first-child{border-top:0}
+.impchk{display:flex;gap:8px;align-items:flex-start;flex:1 1 220px;min-width:0;margin:0;font-weight:400;cursor:pointer}
+.impchk input{margin-top:3px;width:18px;height:18px;flex:none}
+.implist select{flex:0 0 auto;max-width:180px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font-size:.86rem}
 .banner b{display:block;margin-bottom:2px}
 
 /* hero */
@@ -991,7 +998,7 @@ document.addEventListener("click", async (e) => {
 let MONEY_FORM = null;   // "DEPOSIT" | "WITHDRAW" | null
 function moneyControls() {
   const f = MONEY_FORM;
-  return `<div class="row" style="margin-top:12px"><button class="mini primary" data-money="DEPOSIT">Add money</button><button class="mini" data-money="WITHDRAW">Take money out</button></div>
+  return `<div class="row" style="margin-top:12px"><button class="mini primary" data-money="DEPOSIT">Add money</button><button class="mini" data-money="WITHDRAW">Take money out</button>${importButton()}</div>
     ${f ? `<div class="recform" style="margin-top:10px">
       <div><label for="mf-date">Date</label><input id="mf-date" type="date" value="${sydParts().date}" max="${sydParts().date}"></div>
       <div><label for="mf-amt">Amount (A$)</label><input id="mf-amt" type="number" step="any" min="0" inputmode="decimal"></div>
@@ -1102,7 +1109,8 @@ function coreControls() {
       <button class="mini primary" data-core="open-buy">Record a purchase</button>
       ${tick.length ? `<button class="mini" data-core="open-fix">Correct a holding</button>` : ""}
       ${managed.length ? `<button class="mini" data-core="open-hgp">Update managed portfolio</button>` : ""}
-      <label class="mini" style="display:inline-flex;align-items:center;margin:0;cursor:pointer">Import file<input type="file" id="core-file" hidden></label></div>
+      ${importButton()}
+      <label class="mini" style="display:inline-flex;align-items:center;margin:0;cursor:pointer">Import holdings file<input type="file" id="core-file" hidden></label></div>
     ${form}<div class="msg" id="core-msg" role="status"></div>`;
 }
 document.addEventListener("change", async (e) => {
@@ -1145,7 +1153,7 @@ document.addEventListener("click", async (e) => {
           const mine = (c.lots || []).filter((l) => (l.group || "Core") === group && l.ticker === ticker);
           const first = mine.map((l) => l.date).filter(Boolean).sort()[0] || sydParts().date;
           const keptCost = cost != null ? cost : (mine.every((l) => l.cost != null) ? mine.reduce((a, l) => a + Number(l.cost), 0) : null);
-          return { ...c, lots: (c.lots || []).filter((l) => !mine.includes(l)).concat([{ id: newId(), group, ticker, units, cost: keptCost, date: first, note: "Corrected by you" }]) };
+          return { ...c, lots: (c.lots || []).filter((l) => !mine.includes(l)).concat([{ id: newId(), group, ticker, units, cost: keptCost, date: first, asof: sydParts().date, note: "Corrected by you" }]) };
         });
       }
     } else if (act === "save-hgp") {
@@ -1160,7 +1168,7 @@ document.addEventListener("click", async (e) => {
       await mutateCore((c) => ({ ...c, lots: (c.lots || []).map((l) => (l.group || "Core") !== group ? l : {
         ...l, units: Math.round(l.units * f * 1e4) / 1e4,
         cost: l.cost == null ? null : Math.round((Number(l.cost) + added * (l.units * prices[l.ticker]) / cur) * 100) / 100,
-        note: `Value updated to ${money(target)} on ${sydParts().date}` }) }));
+        asof: sydParts().date, note: `Value updated to ${money(target)} on ${sydParts().date}` }) }));
     } else return;
     CORE_FORM = null; render();
     const x = m(); if (x) { x.className = "msg ok"; x.textContent = "Saved. Figures update at the next check (within 15 minutes in ASX hours)."; }
@@ -1498,6 +1506,8 @@ function renderOrders(s, bk, ad) {
       ${pastForm}
       <div class="panel scroll"><table><thead><tr><th>Date</th><th>Side</th><th>ETF</th><th class="r">Suggested</th><th>You</th><th class="r">Price diff</th><th></th></tr></thead>
       <tbody>${past || `<tr><td colspan="7">No earlier orders yet.</td></tr>`}</tbody></table></div></section>
+    <section><h2>Import from Betashares</h2><p class="sub">Upload the transactions CSV you export from Betashares. Each row is sorted into the strategy, your own ETFs or the managed portfolio; anything already recorded is skipped, and figures you typed by hand are corrected to Betashares' exact ones. You see a preview before anything is saved, and importing the same file twice adds nothing.</p>
+      <div class="panel"><div class="row">${importButton()}</div></div></section>
     <section><h2>Record another trade${ih("record")}</h2>${ib("record")}<p class="sub">For trades that weren't in an order, for example buying earlier or later than suggested.</p>
       <div class="panel"><div class="fields">
         <div><label for="m-side">Side</label><select id="m-side"><option value="BUY">Buy</option><option value="SELL">Sell</option></select></div>
@@ -1681,6 +1691,345 @@ function renderRankings(s) {
     <tbody>${rk || `<tr><td colspan="5">No ETFs currently qualify.</td></tr>`}</tbody></table></div></section>`;
 }
 
+/* ---------- import a Betashares transaction CSV: sort, match, preview, then save ---------- */
+/* Every row gets a fingerprint (src) saved on what it creates, so importing the same file again adds nothing.
+   Rows already entered by hand are matched (same ETF and side, within 3 days, units within 2%) and corrected
+   to Betashares' exact figures. Nothing is saved until you confirm the preview. */
+let IMP = null;   // { rows, dest: {src: "strategy"|"own"|"ignore"}, off: Set(src), plan, file }
+const IMP_LABEL = { strategy: "Strategy", own: "Your own ETFs", managed: "Managed portfolio", ignore: "Don't import" };
+
+function csvSplit(line) {
+  const out = []; let cur = "", q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) { if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; }
+    else if (ch === '"') q = true; else if (ch === ",") { out.push(cur); cur = ""; } else cur += ch;
+  }
+  out.push(cur); return out;
+}
+const bsNum = (s) => { const t = String(s ?? "").replace(/[$,\s]/g, ""); if (t === "") return null; const v = Number(t); return isFinite(v) ? v : null; };
+const bsDate = (s) => { const t = String(s || "").trim(); let m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`; m = t.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[0] : null; };
+
+function parseBetashares(text) {
+  const lines = String(text).replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim());
+  if (!lines.length) throw new Error("The file is empty.");
+  const head = csvSplit(lines[0]).map((h) => h.trim().toLowerCase());
+  const col = (n) => head.indexOf(n);
+  const need = ["effective date", "activity type", "gross", "symbol", "price", "quantity"];
+  const miss = need.filter((n) => col(n) < 0);
+  if (miss.length) throw new Error("This doesn't look like a Betashares transactions export (missing: " + miss.join(", ") + ").");
+  const seen = {}; const rows = [];
+  lines.slice(1).forEach((ln, i) => {
+    const c = csvSplit(ln);
+    const date = bsDate(c[col("effective date")]); const type = String(c[col("activity type")] || "").trim();
+    if (!date || !type) return;
+    const ticker = String(c[col("symbol")] || "").trim().toUpperCase().replace(/:AU$|\.AX$|\.AU$/, "");
+    const gross = bsNum(c[col("gross")]), qty = bsNum(c[col("quantity")]), price = bsNum(c[col("price")]);
+    const base = `bs|${date}|${type}|${ticker}|${qty == null ? "" : qty.toFixed(6)}|${gross == null ? "" : gross.toFixed(2)}`;
+    seen[base] = (seen[base] || 0) + 1;
+    rows.push({ i, date, type, ticker, gross, qty, price, src: seen[base] > 1 ? `${base}#${seen[base]}` : base });
+  });
+  if (!rows.length) throw new Error("No transactions found in the file.");
+  return rows;
+}
+
+/* What kind of row is it? */
+function bsKind(r) {
+  const t = r.type.toLowerCase();
+  if (t.startsWith("portfolio")) {
+    if (r.ticker && /\(buy\)/.test(t) && r.qty > 0) return "mbuy";
+    if (r.ticker && /\(sell\)/.test(t) && r.qty < 0) return "msell";
+    return "info";
+  }
+  if (t === "buy" && r.ticker && r.qty > 0) return "buy";
+  if (t === "sell" && r.ticker && r.qty < 0) return "sell";
+  if (t.startsWith("distribution reinvest") && r.ticker && r.qty > 0) return "drp";
+  if (t === "distribution" && r.ticker) return "dist";
+  if (t === "deposit") return "dep";
+  if (t.startsWith("withdraw")) return "wd";
+  return "info";
+}
+
+/* Groups in your core holdings: your own ETFs and the managed portfolio */
+function coreGroupNames() {
+  const groups = [...new Set((CORE_REC.lots || []).map((l) => l.group || "Core"))];
+  const managed = groups.find((g) => /managed|portfolio/i.test(g)) || "Betashares managed portfolio";
+  const own = groups.includes("Your own ETFs") ? "Your own ETFs" : (groups.find((g) => !/managed|portfolio/i.test(g)) || "Your own ETFs");
+  return { own, managed };
+}
+/* Up to which date an existing holding already counts everything (a statement estimate, an import, a correction
+   or a managed-portfolio value update). Rows on or before it are already in the figure. */
+function coveredThrough(lots) {
+  let d = null;
+  for (const l of lots) {
+    if (l.src || l.note === "Recorded by you") continue;          // single purchases are matched one by one
+    const m = String(l.note || "").match(/on (\d{4}-\d{2}-\d{2})/);
+    const x = l.asof || (m && m[1])
+      || (l.note === "Corrected by you" && CORE_REC.updated ? String(CORE_REC.updated).slice(0, 10) : null)
+      || (CORE_REC.imported ? String(CORE_REC.imported).slice(0, 10) : null) || l.date;
+    if (x && (!d || x > d)) d = x;
+  }
+  return d;
+}
+
+function impPlan(rows, destOverride, off, force = new Set()) {
+  const known = new Set(((STATE && STATE.universe) || []).map((u) => u.ticker).concat(["AAA"]));
+  const trades = TRADES || [];
+  const lots = CORE_REC.lots || [];
+  const G = coreGroupNames();
+  const stratTickers = new Set(trades.filter((t) => t.status === "done" && (t.side === "BUY" || t.side === "SELL")).map((t) => t.ticker));
+  const ownTickers = new Set(lots.filter((l) => (l.group || "Core") !== G.managed).map((l) => l.ticker));
+  // open orders you haven't recorded yet, to link imported trades to them
+  let open = [];
+  try { if (STATE && STATE.B) open = adherence(STATE).rows.filter((r) => r.status === "open"); } catch (e) { open = []; }
+  const orderFor = (r, side) => open.find((o) => !o.used && o.item.side === side && o.item.ticker === r.ticker && r.date >= o.date && daysBetween(o.date, r.date) <= 10);
+
+  const items = rows.map((r) => ({ ...r, kind: bsKind(r) }));
+  // 1. destination of each trade-like row
+  for (const it of items) {
+    if (["buy", "sell", "drp", "dist"].includes(it.kind)) {
+      let d;
+      if (!known.has(it.ticker)) d = "own";
+      else if (it.ticker === "AAA") d = "strategy";
+      else if (stratTickers.has(it.ticker) && !ownTickers.has(it.ticker)) d = "strategy";
+      else if (ownTickers.has(it.ticker) && !stratTickers.has(it.ticker)) d = (it.kind === "buy" && orderFor(it, "BUY")) ? "strategy" : "own";
+      else d = orderFor(it, it.kind === "sell" ? "SELL" : "BUY") ? "strategy" : (stratTickers.has(it.ticker) ? "strategy" : "own");
+      if (destOverride[it.src] && (destOverride[it.src] !== "strategy" || known.has(it.ticker))) d = destOverride[it.src];
+      it.dest = d;
+    } else if (it.kind === "mbuy" || it.kind === "msell") it.dest = destOverride[it.src] || "managed";
+    else it.dest = destOverride[it.src] || "ignore";
+  }
+  // 2. deposits: strategy money if the strategy traded that day (you can change it)
+  const stratDay = (d) => items.some((x) => x.dest === "strategy" && (x.kind === "buy" || x.kind === "sell") && x.date === d);
+  for (const it of items) if (it.kind === "dep" && !destOverride[it.src]) it.dest = stratDay(it.date) ? "strategy" : "ignore";
+  for (const it of items) if (it.kind === "wd" && !destOverride[it.src]) it.dest = "ignore";
+  // 3. money moved from the strategy to your own ETFs: a strategy sale funding an own-ETF purchase on the same day
+  const days = [...new Set(items.map((x) => x.date))];
+  for (const d of days) {
+    const sold = items.filter((x) => x.date === d && x.dest === "strategy" && x.kind === "sell").reduce((a, x) => a + Math.abs(x.gross || 0), 0);
+    const bought = items.filter((x) => x.date === d && x.dest === "strategy" && x.kind === "buy").reduce((a, x) => a + Math.abs(x.gross || 0), 0);
+    const ownBuy = items.filter((x) => x.date === d && x.dest === "own" && x.kind === "buy").reduce((a, x) => a + Math.abs(x.gross || 0), 0);
+    const amt = Math.round(Math.min(Math.max(sold - bought, 0), ownBuy) * 100) / 100;
+    if (amt >= 1) items.push({ i: -1, date: d, type: "Moved to your own ETFs", ticker: "", gross: -amt, qty: null, price: null,
+      src: `bs|${d}|transfer-out|${amt.toFixed(2)}`, kind: "xfer", dest: destOverride[`bs|${d}|transfer-out|${amt.toFixed(2)}`] || "strategy" });
+  }
+
+  // 4. match each row with what's already recorded
+  const usedT = new Set(), usedL = new Set();
+  const bySrcT = new Map(trades.filter((t) => t.src).map((t) => [t.src, t]));
+  const bySrcL = new Map(lots.filter((l) => l.src).map((l) => [l.src, l]));
+  const flows = trades.filter((t) => t.status === "done" && (t.side === "DEPOSIT" || t.side === "WITHDRAW"));
+  const start = flows.find((f) => f.note === "Starting amount");
+  const stratDeps = items.filter((x) => x.kind === "dep" && x.dest === "strategy");
+  const replaceStart = start && stratDeps.some((x) => Math.abs(daysBetween(start.date, x.date)) <= 7) && !flows.some((f) => f.src);
+  const plan = [];
+  const push = (it, p) => { const o = { it, ...p, on: !off.has(it.src) && p.action !== "same" && p.action !== "covered" && p.action !== "skip" }; plan.push(o); return o; };
+  const closeT = (it, side) => {
+    const u = Math.abs(it.qty), v = Math.abs(it.gross);
+    return trades.filter((t) => !usedT.has(t) && t.status === "done" && t.side === side && t.ticker === it.ticker && t.date && Math.abs(daysBetween(t.date, it.date)) <= 3
+      && (Math.abs(t.units - u) <= 0.02 * u || Math.abs(t.units * t.price - v) <= Math.max(2, 0.01 * v)))
+      .sort((a, b) => Math.abs(daysBetween(a.date, it.date)) - Math.abs(daysBetween(b.date, it.date)) || Math.abs(a.units - u) - Math.abs(b.units - u))[0];
+  };
+  for (const it of items) {
+    if (it.dest === "ignore" || it.kind === "info") { push(it, { action: "skip", why: it.kind === "info" ? bsInfoWhy(it) : "Not for the strategy" }); continue; }
+    if (it.dest === "strategy") {
+      if (it.kind === "buy" || it.kind === "sell") {
+        const side = it.kind === "buy" ? "BUY" : "SELL", units = Math.abs(it.qty), price = Math.abs(it.gross) / units;
+        const ex = bySrcT.get(it.src) || closeT(it, side);
+        if (ex) {
+          usedT.add(ex);
+          const same = ex.date === it.date && Math.abs(ex.units - units) < 1e-6 && Math.abs(ex.price - price) < 1e-4;
+          push(it, same ? { action: "same" } : { action: "update", id: ex.id, was: `${num(ex.units, 4)} at ${money(ex.price, 4)} on ${dayName(ex.date)}`, rec: { date: it.date, units, price } });
+        } else {
+          const o = orderFor(it, side); if (o) o.used = true;
+          push(it, { action: "add", rec: { status: "done", side, ticker: it.ticker, date: it.date, units, price, order_key: o ? o.key : null }, linked: !!o });
+        }
+      } else if (it.kind === "dep" || it.kind === "wd" || it.kind === "xfer") {
+        const side = it.kind === "dep" ? "DEPOSIT" : "WITHDRAW", amount = Math.round(Math.abs(it.gross) * 100) / 100;
+        const ex = bySrcT.get(it.src) || flows.find((f) => !usedT.has(f) && f !== start && f.side === side && Math.abs(f.amount - amount) <= 0.5 && Math.abs(daysBetween(f.date, it.date)) <= 3);
+        if (ex) { usedT.add(ex); push(it, { action: "same" }); }
+        else push(it, { action: "add", rec: { status: "done", side, date: it.date, amount, note: it.kind === "xfer" ? "Moved to your own ETFs" : "From Betashares" } });
+      } else if (it.kind === "dist" || it.kind === "drp") {
+        if (it.kind === "dist" && items.some((x) => x.kind === "drp" && x.ticker === it.ticker && x.dest === "strategy" && Math.abs(daysBetween(x.date, it.date)) <= 7)) { push(it, { action: "skip", why: "Reinvested: recorded with the reinvestment" }); continue; }
+        const cash = it.kind === "dist" ? it : items.find((x) => x.kind === "dist" && x.ticker === it.ticker && Math.abs(daysBetween(x.date, it.date)) <= 7);
+        const amount = Math.round(Math.abs((cash || it).gross) * 100) / 100;
+        const rec = { status: "done", side: "DIST", ticker: it.ticker, date: it.date, amount, ...(it.kind === "drp" ? { units: it.qty, price: amount / it.qty } : {}) };
+        const ex = bySrcT.get(it.src) || trades.find((t) => !usedT.has(t) && t.side === "DIST" && t.ticker === it.ticker && Math.abs(daysBetween(t.date, it.date)) <= 20);
+        if (ex) { usedT.add(ex); const same = Math.abs(ex.amount - amount) < 0.01 && Math.abs((ex.units || 0) - (rec.units || 0)) < 1e-6;
+          push(it, same ? { action: "same" } : { action: "update", id: ex.id, was: `${money(ex.amount, 2)}${ex.units ? `, ${num(ex.units, 4)} units` : ""}`, rec }); }
+        else push(it, { action: "add", rec });
+      }
+      continue;
+    }
+    // your own ETFs and the managed portfolio
+    if (it.kind === "dist") { push(it, { action: "skip", why: "Cash distribution: only reinvested units change your holdings" }); continue; }
+    if (it.kind === "dep" || it.kind === "wd" || it.kind === "xfer") { push(it, { action: "skip", why: "Cash only" }); continue; }
+    const group = it.dest === "managed" ? G.managed : G.own;
+    const mine = lots.filter((l) => (l.group || "Core") === group && (it.dest === "managed" || l.ticker === it.ticker));
+    const cov = coveredThrough(it.dest === "managed" ? lots.filter((l) => (l.group || "Core") === group) : mine);
+    const units = Math.abs(it.qty), cost = Math.round(Math.abs(it.gross) * 100) / 100;
+    const ex = bySrcL.get(it.src) || (it.qty > 0 ? mine.find((l) => !usedL.has(l) && !l.src && l.note === "Recorded by you" && l.ticker === it.ticker && Math.abs(daysBetween(l.date, it.date)) <= 3 && Math.abs(l.units - units) <= 0.02 * units) : null);
+    if (ex) {
+      usedL.add(ex);
+      const same = Math.abs(ex.units - units) < 1e-6 && ex.date === it.date;
+      push(it, same ? { action: "same" } : { action: "lotfix", id: ex.id, group, was: `${num(ex.units, 4)} units on ${dayName(ex.date)}`, lot: { units, cost, date: it.date } });
+    } else if (cov && it.date <= cov && !force.has(it.src)) push(it, { action: "covered", why: `Already in your ${group === G.managed ? "managed portfolio" : it.ticker} figure (counted up to ${dayName(cov)}). Tick to add it anyway.` });
+    else if (it.qty > 0) push(it, { action: "lotadd", group, lot: { group, ticker: it.ticker, units, cost, date: it.date, note: it.kind === "drp" ? "Reinvested distribution (Betashares import)" : "Betashares import" } });
+    else push(it, { action: "lotsell", group, ticker: it.ticker, units });
+  }
+  for (const p of plan) if (force.has(p.it.src) && p.action.startsWith("lot")) { p.on = true; p.forced = true; }
+  if (replaceStart) plan.unshift({ it: { src: "start", date: start.date, kind: "start", type: "Starting amount", gross: start.amount, ticker: "" }, action: "dropstart", id: start.id, on: !off.has("start"),
+    why: `Replace your starting amount of ${money(start.amount)} with the actual deposits below` });
+  return { plan, G };
+}
+function bsInfoWhy(it) {
+  const t = it.type.toLowerCase();
+  if (t.startsWith("portfolio")) return "Managed portfolio cash: its ETF purchases and sales are imported instead";
+  if (t.startsWith("transfer")) return "Cash transfer";
+  return "Not needed";
+}
+
+/* Apply the ticked parts of a plan to a trade list / core holdings (pure, so we can preview and save the same way) */
+function applyTrades(list, plan) {
+  let out = list.slice(); const now = new Date().toISOString();
+  const have = new Set(out.filter((t) => t.src).map((t) => t.src));
+  for (const p of plan.filter((x) => x.on)) {
+    if (p.action === "dropstart") out = out.filter((t) => t.id !== p.id);
+    else if (p.action === "update") out = out.map((t) => t.id === p.id ? { ...t, ...p.rec, src: p.it.src, status: "done", recorded: now } : t);
+    else if (p.action === "add" && !have.has(p.it.src)) { out.push({ id: newId(), ...p.rec, src: p.it.src, recorded: now }); have.add(p.it.src); }
+  }
+  return out;
+}
+function applyCore(core, plan) {
+  let lots = (core.lots || []).slice();
+  const have = new Set(lots.filter((l) => l.src).map((l) => l.src));
+  for (const p of plan.filter((x) => x.on).sort((a, b) => a.it.date.localeCompare(b.it.date))) {
+    if (p.action === "lotfix") lots = lots.map((l) => l.id === p.id ? { ...l, ...p.lot, src: p.it.src, note: "Betashares import" } : l);
+    else if (p.action === "lotadd" && !have.has(p.it.src)) { lots.push({ id: newId(), ...p.lot, src: p.it.src }); have.add(p.it.src); }
+    else if (p.action === "lotsell" && !have.has(p.it.src)) {
+      let left = p.units;
+      lots = lots.map((l) => {
+        if (left <= 1e-9 || (l.group || "Core") !== p.group || l.ticker !== p.ticker) return l;
+        const take = Math.min(left, l.units); left -= take;
+        const units = l.units - take;
+        return { ...l, units: Math.round(units * 1e8) / 1e8, cost: l.cost == null ? null : Math.round(Number(l.cost) * (units / l.units) * 100) / 100 };
+      }).filter((l) => l.units > 1e-9);
+      lots.push({ id: newId(), group: p.group, ticker: p.ticker, units: 0, cost: 0, date: p.it.date, src: p.it.src, note: "Sale (Betashares import)" });
+      have.add(p.it.src);
+    }
+  }
+  return { ...core, lots };
+}
+
+function impDescribe(it) {
+  const u = it.qty != null ? num(Math.abs(it.qty), 4) : "";
+  const pr = it.qty ? money(Math.abs(it.gross) / Math.abs(it.qty), 2) : "";
+  switch (it.kind) {
+    case "buy": case "mbuy": return `Buy ${it.ticker}: ${u} units at ${pr}`;
+    case "sell": case "msell": return `Sell ${it.ticker}: ${u} units at ${pr}`;
+    case "drp": return `${it.ticker} distribution reinvested: ${u} units`;
+    case "dist": return `${it.ticker} distribution ${money(Math.abs(it.gross), 2)}`;
+    case "dep": return `Deposit ${money(Math.abs(it.gross), 2)}`;
+    case "wd": return `Withdrawal ${money(Math.abs(it.gross), 2)}`;
+    case "xfer": return `Money out of the strategy ${money(Math.abs(it.gross), 2)} (paid for your own ETFs that day)`;
+    case "start": return `Starting amount ${money(it.gross)}`;
+    default: return `${it.type}${it.ticker ? " " + it.ticker : ""}${it.gross != null ? " " + money(it.gross, 2) : ""}`;
+  }
+}
+const IMP_STATUS = { add: ["open", "New"], lotadd: ["open", "New"], lotsell: ["open", "New sale"], update: ["skip", "Correct it"], lotfix: ["skip", "Correct it"],
+  dropstart: ["skip", "Replace"], same: ["done", "Already recorded"], covered: ["done", "Already counted"], skip: ["", "Not imported"] };
+
+function renderImport() {
+  let el = $("#impSheet");
+  if (!IMP) { if (el) el.remove(); document.body.style.overflow = ""; return; }
+  if (!el) { el = document.createElement("div"); el.id = "impSheet"; el.className = "sheet-bg"; document.body.appendChild(el); document.body.style.overflow = "hidden"; }
+  const { plan, G } = IMP.res;
+  const changes = plan.filter((p) => p.on);
+  // what the result looks like
+  const after = applyTrades(TRADES, plan);
+  const bk = book(after, (STATE && STATE.prices) || {});
+  const coreAfter = applyCore(CORE_REC, plan);
+  const ownT = {}; for (const l of coreAfter.lots || []) if ((l.group || "Core") === G.own) ownT[l.ticker] = (ownT[l.ticker] || 0) + Number(l.units || 0);
+  const touchedOwn = [...new Set(plan.filter((p) => p.on && p.group === G.own).map((p) => p.it.ticker))];
+  const sec = (title, list, editable) => !list.length ? "" : `<h3 style="margin:16px 0 6px">${esc(title)}</h3><ul class="implist">${list.map((p) => {
+    const [c, label] = IMP_STATUS[p.action] || ["", ""];
+    const can = p.action !== "same" && p.action !== "skip";
+    const dsel = editable && !["same", "covered"].includes(p.action) && ["buy", "sell", "drp", "dist", "dep", "wd", "xfer"].includes(p.it.kind)
+      ? `<select data-impdest="${esc(p.it.src)}" aria-label="Where this belongs">${["strategy", "own", "ignore"].filter((d) => !(d === "own" && ["dep", "wd", "xfer"].includes(p.it.kind)))
+          .map((d) => `<option value="${d}"${p.it.dest === d ? " selected" : ""}>${esc(d === "ignore" ? "Don't import" : IMP_LABEL[d])}</option>`).join("")}</select>` : "";
+    return `<li><label class="impchk">${can ? `<input type="checkbox" data-impon="${esc(p.it.src)}"${p.on ? " checked" : ""}${p.action === "covered" || p.forced ? ' data-force="1"' : ""}>` : `<span style="width:18px;display:inline-block"></span>`}
+      <span><b>${esc(dayName(p.it.date))}</b> · ${esc(impDescribe(p.it))}
+      ${label ? `<span class="chip ${c}" style="margin-left:4px">${esc(label)}</span>` : ""}${p.linked ? ` <span class="chip done">Matches an order</span>` : ""}
+      ${p.was ? `<div class="sub2">You'd recorded ${esc(p.was)}: will use Betashares' exact figures</div>` : ""}${p.why ? `<div class="sub2">${esc(p.why)}</div>` : ""}</span></label>${dsel}</li>`; }).join("")}</ul>`;
+  const strat = plan.filter((p) => p.it.dest === "strategy" || p.action === "dropstart");
+  const own = plan.filter((p) => p.it.dest === "own");
+  const man = plan.filter((p) => p.it.dest === "managed");
+  const rest = plan.filter((p) => p.it.dest === "ignore" && p.it.kind !== "info");
+  const info = plan.filter((p) => p.it.kind === "info");
+  const warn = [];
+  if (bk.cash < -1) warn.push(`Your strategy cash would be ${money(bk.cash)}: a deposit is probably marked "Don't import" or missing.`);
+  for (const h of bk.holdings) if (h.units < -1e-6) warn.push(`${h.ticker} would go below zero units.`);
+  el.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="impTitle">
+    <div class="sheet-head"><div><h2 id="impTitle">Import from Betashares</h2><p class="sub" style="margin:4px 0 0">${esc(IMP.file)}: ${IMP.rows.length} rows. Nothing is saved until you tap Import.</p></div>
+      <button class="mini" data-imp="close" aria-label="Close">Close</button></div>
+    <div class="facts2"><div>New<b>${changes.filter((p) => /add|sell/.test(p.action)).length}</b></div><div>Corrections<b>${changes.filter((p) => /update|fix|dropstart/.test(p.action)).length}</b></div><div>Already there<b>${plan.filter((p) => p.action === "same" || p.action === "covered").length}</b></div></div>
+    ${warn.length ? `<div class="banner warn" role="alert"><b>Check before importing</b>${warn.map(esc).join(" ")}</div>` : ""}
+    <p class="note">Each row is sorted automatically. Change the box on the right if one belongs somewhere else; untick anything you don't want.</p>
+    ${sec("Strategy", strat, true)}
+    ${strat.length ? `<p class="chart-note">After import: strategy cash ${money(bk.cash)}${bk.holdings.length ? ", holding " + bk.holdings.map((h) => `${h.ticker} ${num(h.units, 2)}`).join(", ") : ""}.</p>` : ""}
+    ${sec("Your own ETFs", own, true)}
+    ${touchedOwn.length ? `<p class="chart-note">After import: ${touchedOwn.map((k) => `${k} ${num(ownT[k] || 0, 4)} units`).join(", ")}. These should match the units in the Betashares app.</p>` : ""}
+    ${sec("Managed portfolio", man, false)}
+    ${sec("Not imported", rest, true)}
+    ${info.length ? `<details style="margin-top:12px"><summary class="note" style="cursor:pointer">${info.length} cash and fee rows that don't need importing</summary>${sec("", info, false)}</details>` : ""}
+    <div class="row" style="margin-top:16px"><button class="btn" data-imp="save"${changes.length ? "" : " disabled"}>${changes.length ? `Import ${changes.length} change${changes.length === 1 ? "" : "s"}` : "Nothing new to import"}</button><button class="btn ghost" data-imp="close">Cancel</button></div>
+    <div class="msg" id="impMsg" role="status"></div></div>`;
+}
+function impRebuild() { IMP.res = impPlan(IMP.rows, IMP.dest, IMP.off, IMP.force); renderImport(); }
+async function startImport(file) {
+  try {
+    if (!STATE || !STATE.B) throw new Error("Connect your data first, so the import can check what's already recorded.");
+    const rows = parseBetashares(await file.text());
+    await load();                         // match against the latest records from every device
+    IMP = { rows, dest: {}, off: new Set(), force: new Set(), file: file.name || "Betashares file" };
+    impRebuild();
+  } catch (err) { IMP = null; renderImport(); banner("err", "Couldn't read that file", err.message); }
+}
+document.addEventListener("change", (e) => {
+  const f = e.target.closest("input[data-bsimport]");
+  if (f && f.files.length) { const file = f.files[0]; f.value = ""; startImport(file); return; }
+  if (!IMP) return;
+  const d = e.target.closest("select[data-impdest]");
+  if (d) { IMP.dest[d.dataset.impdest] = d.value; IMP.off.delete(d.dataset.impdest); impRebuild(); return; }
+  const c = e.target.closest("input[data-impon]");
+  if (c) {
+    const k = c.dataset.impon;
+    if (c.dataset.force) { if (c.checked) { IMP.force.add(k); IMP.off.delete(k); } else IMP.force.delete(k); }
+    else if (c.checked) IMP.off.delete(k); else IMP.off.add(k);
+    impRebuild();
+  }
+});
+document.addEventListener("click", async (e) => {
+  if (IMP && e.target.id === "impSheet") { IMP = null; renderImport(); return; }
+  const b = e.target.closest("button[data-imp]"); if (!b) return;
+  if (b.dataset.imp === "close") { IMP = null; renderImport(); return; }
+  if (b.dataset.imp !== "save" || !IMP) return;
+  const m = $("#impMsg"); b.disabled = true; m.className = "msg"; m.textContent = "Saving…";
+  try {
+    const plan = IMP.res.plan;
+    const tradeChange = plan.some((p) => p.on && ["add", "update", "dropstart"].includes(p.action));
+    const coreChange = plan.some((p) => p.on && p.action.startsWith("lot"));
+    // each save re-reads the latest file first; fingerprints stop anything being added twice
+    if (tradeChange) await mutateTrades((list) => applyTrades(list, plan));
+    if (coreChange) await mutateCore((c) => applyCore(c, plan));
+    if (tradeChange && isReal()) await saveSettings({ recalc: new Date().toISOString() });
+    const n = plan.filter((p) => p.on).length;
+    IMP = null; renderImport(); render();
+    banner("ok", "Imported", `${n} change${n === 1 ? "" : "s"} saved. Holdings and values update at the next check (within 15 minutes in ASX hours).`);
+  } catch (err) { b.disabled = false; m.className = "msg bad"; m.textContent = err.message; }
+});
+const importButton = (label = "Import Betashares CSV") => `<label class="mini primary" style="display:inline-flex;align-items:center;cursor:pointer;margin:0">${esc(label)}<input type="file" accept=".csv,text/csv,text/plain" data-bsimport hidden></label>`;
+
 /* ---------- tabs ---------- */
 function showTab(name) {
   document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
@@ -1860,8 +2209,8 @@ $("#disablePush").addEventListener("click", async () => {
 $("#refresh").addEventListener("click", updateNow);
 let NARROW = chartNarrow();
 window.addEventListener("resize", () => { const n = chartNarrow(); if (n !== NARROW) { NARROW = n; render(); } });
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && !OPEN_FORM) load(); });
-setInterval(() => { if (document.visibilityState === "visible" && !OPEN_FORM) load(); }, 5 * 60 * 1000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && !OPEN_FORM && !IMP) load(); });
+setInterval(() => { if (document.visibilityState === "visible" && !OPEN_FORM && !IMP) load(); }, 5 * 60 * 1000);
 load();
 </script>
 </body>
