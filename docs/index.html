@@ -1878,6 +1878,25 @@ function impPlan(rows, destOverride, off, force = new Set()) {
     else push(it, { action: "lotsell", group, ticker: it.ticker, units });
   }
   for (const p of plan) if (force.has(p.it.src) && p.action.startsWith("lot")) { p.on = true; p.forced = true; }
+  // An entry you typed as one trade that Betashares lists as several (e.g. two OZR buys on the same day entered as one):
+  // if the separate trades are being imported (or already were), the combined entry is a duplicate and is removed.
+  for (const t of trades) {
+    if (usedT.has(t) || t.src || t.status !== "done" || (t.side !== "BUY" && t.side !== "SELL")) continue;
+    const parts = plan.filter((p) => p.it.dest === "strategy" && (p.action === "add" || p.action === "same") && p.it.ticker === t.ticker
+      && (p.it.kind === "buy" ? "BUY" : p.it.kind === "sell" ? "SELL" : "") === t.side && Math.abs(daysBetween(p.it.date, t.date)) <= 3);
+    if (parts.length < 2) continue;
+    const near = (u) => Math.abs(u - t.units) <= 0.02 * t.units;
+    const sum = (ps) => ps.reduce((a, p) => a + Math.abs(p.it.qty), 0);
+    const sameDay = parts.filter((p) => p.it.date === t.date);
+    const pick = sameDay.length >= 2 && near(sum(sameDay)) ? sameDay : near(sum(parts)) ? parts : null;
+    if (!pick) continue;
+    usedT.add(t);
+    const first = pick.find((p) => p.action === "add" && p.rec && !p.rec.order_key);
+    if (t.order_key && first) first.rec = { ...first.rec, order_key: t.order_key };     // keep the link to the order you followed
+    plan.push({ it: { src: "dup|" + t.id, date: t.date, kind: "dup", type: "Your entry", ticker: t.ticker, qty: t.units, gross: t.units * t.price, side: t.side, dest: "strategy" },
+      action: "dropdup", id: t.id, on: !off.has("dup|" + t.id),
+      why: `Betashares lists this as ${pick.length} separate trades (${pick.map((p) => num(Math.abs(p.it.qty), 2)).join(" + ")} units), which are used instead` });
+  }
   if (replaceStart) plan.unshift({ it: { src: "start", date: start.date, kind: "start", type: "Starting amount", gross: start.amount, ticker: "" }, action: "dropstart", id: start.id, on: !off.has("start"),
     why: `Replace your starting amount of ${money(start.amount)} with the actual deposits below` });
   return { plan, G };
@@ -1894,7 +1913,7 @@ function applyTrades(list, plan) {
   let out = list.slice(); const now = new Date().toISOString();
   const have = new Set(out.filter((t) => t.src).map((t) => t.src));
   for (const p of plan.filter((x) => x.on)) {
-    if (p.action === "dropstart") out = out.filter((t) => t.id !== p.id);
+    if (p.action === "dropstart" || p.action === "dropdup") out = out.filter((t) => t.id !== p.id);
     else if (p.action === "update") out = out.map((t) => t.id === p.id ? { ...t, ...p.rec, src: p.it.src, status: "done", recorded: now } : t);
     else if (p.action === "add" && !have.has(p.it.src)) { out.push({ id: newId(), ...p.rec, src: p.it.src, recorded: now }); have.add(p.it.src); }
   }
@@ -1933,11 +1952,12 @@ function impDescribe(it) {
     case "wd": return `Withdrawal ${money(Math.abs(it.gross), 2)}`;
     case "xfer": return `Money out of the strategy ${money(Math.abs(it.gross), 2)} (paid for your own ETFs that day)`;
     case "start": return `Starting amount ${money(it.gross)}`;
+    case "dup": return `Your earlier entry: ${it.side === "BUY" ? "Buy" : "Sell"} ${it.ticker} ${num(it.qty, 2)} units (${money(it.gross)})`;
     default: return `${it.type}${it.ticker ? " " + it.ticker : ""}${it.gross != null ? " " + money(it.gross, 2) : ""}`;
   }
 }
 const IMP_STATUS = { add: ["open", "New"], lotadd: ["open", "New"], lotsell: ["open", "New sale"], update: ["skip", "Correct it"], lotfix: ["skip", "Correct it"],
-  dropstart: ["skip", "Replace"], same: ["done", "Already recorded"], covered: ["done", "Already counted"], skip: ["", "Not imported"] };
+  dropstart: ["skip", "Replace"], dropdup: ["skip", "Remove duplicate"], same: ["done", "Already recorded"], covered: ["done", "Already counted"], skip: ["", "Not imported"] };
 
 function renderImport() {
   let el = $("#impSheet");
@@ -1972,7 +1992,7 @@ function renderImport() {
   el.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="impTitle">
     <div class="sheet-head"><div><h2 id="impTitle">Import from Betashares</h2><p class="sub" style="margin:4px 0 0">${esc(IMP.file)}: ${IMP.rows.length} rows. Nothing is saved until you tap Import.</p></div>
       <button class="mini" data-imp="close" aria-label="Close">Close</button></div>
-    <div class="facts2"><div>New<b>${changes.filter((p) => /add|sell/.test(p.action)).length}</b></div><div>Corrections<b>${changes.filter((p) => /update|fix|dropstart/.test(p.action)).length}</b></div><div>Already there<b>${plan.filter((p) => p.action === "same" || p.action === "covered").length}</b></div></div>
+    <div class="facts2"><div>New<b>${changes.filter((p) => /add|sell/.test(p.action)).length}</b></div><div>Corrections<b>${changes.filter((p) => /update|fix|drop/.test(p.action)).length}</b></div><div>Already there<b>${plan.filter((p) => p.action === "same" || p.action === "covered").length}</b></div></div>
     ${warn.length ? `<div class="banner warn" role="alert"><b>Check before importing</b>${warn.map(esc).join(" ")}</div>` : ""}
     <p class="note">Each row is sorted automatically. Change the box on the right if one belongs somewhere else; untick anything you don't want.</p>
     ${sec("Strategy", strat, true)}
@@ -2017,7 +2037,7 @@ document.addEventListener("click", async (e) => {
   const m = $("#impMsg"); b.disabled = true; m.className = "msg"; m.textContent = "Saving…";
   try {
     const plan = IMP.res.plan;
-    const tradeChange = plan.some((p) => p.on && ["add", "update", "dropstart"].includes(p.action));
+    const tradeChange = plan.some((p) => p.on && ["add", "update", "dropstart", "dropdup"].includes(p.action));
     const coreChange = plan.some((p) => p.on && p.action.startsWith("lot"));
     // each save re-reads the latest file first; fingerprints stop anything being added twice
     if (tradeChange) await mutateTrades((list) => applyTrades(list, plan));
