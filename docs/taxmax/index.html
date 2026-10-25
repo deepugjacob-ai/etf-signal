@@ -1272,6 +1272,34 @@ function fvAbsorb(rule, x){
   line.notes=(line.notes||"")+" Plus "+(x.date||"")+" "+money(amt,2)+".";
   return true;
 }
+/* Car and Uber costs are claimed through DASH (with the logbook % or cents per km). A bank
+   charge is left to DASH when: DASH has the same purchase (amount within 1%, within a week);
+   or it is a toll top-up and DASH logs tolls; or it is fuel and DASH logs fuel; or it is a
+   running car cost while DASH uses cents per km (which already includes fuel, rego, servicing,
+   insurance and tyres, so they cannot be claimed separately). */
+function dashCatFor(desc){
+  if(/linkt|e-?toll|eastlink|citylink|transurban/i.test(desc)) return "tolls";
+  if(/\b(bp|shell|ampol|caltex|7-eleven|united petrol|costco fuel|fuel|metro petroleum|liberty|puma energy|eg australia)\b/i.test(desc)) return "fuel";
+  if(/car wash|carwash|detailing/i.test(desc)) return "carwash";
+  if(/\b(rego|vicroads|service nsw.*regist|ctp|greenslip)\b/i.test(desc)) return "rego";
+  if(/\b(nrma|aami|budget direct|youi|allianz).*(car|motor)|comprehensive/i.test(desc)) return "insurance";
+  if(/tyre|tire|bmw|mechanic|service centre|ultra tune|midas|kmart tyre/i.test(desc)) return "service";
+  if(/uber.*(service|fee)|rideshare fee/i.test(desc)) return "platform";
+  if(/parking|wilson|secure parking|care park/i.test(desc)) return "parking";
+  return "";
+}
+function dashCovers(x,d){
+  if(!d) return false;
+  const amt=Math.abs(num(x.amount)), xd=new Date(String(x.date||"").slice(0,10));
+  const exp=d.expenses||[];
+  if(exp.some(e=>Math.abs(num(e.amount)-amt)<=Math.max(0.5,amt*0.01)&&Math.abs((new Date(e.date)-xd)/86400000)<=7)) return true;
+  const c=dashCatFor(x.desc||""); if(!c) return false;
+  const has=exp.some(e=>e.cat===c);
+  if(c==="tolls"&&has) return true;
+  if(c==="fuel"&&has) return true;
+  if(["fuel","rego","insurance","service","tyres"].indexOf(c)>=0&&d.car&&d.car.method==="cents") return true;
+  return false;
+}
 function scanFinVault(){
   if(!LINKS.fvTxns||linksCfg().fv===false) return false;
   const tx=LINKS.fvTxns.map(t=>({date:String(t.date||"").slice(0,10), desc:String(t.description||""), amount:num(t.amount), fvCat:t.category||"", account:t.account||""}));
@@ -1284,8 +1312,10 @@ function scanFinVault(){
   S.finvault.flags.forEach(f=>{ if(f.rule&&f.rule.mk&&fvRuleLine(f.rule)) ruleFor[f.rule.mk]=f.rule;
     else if(f.status==="not a claim"){ const m=merchantKey(f.desc); if(m) (noFor[m]=noFor[m]||[]).push(f.amount); } });
   const d=dashActive()?dashFY():null;
-  const inDash=(x)=>d&&(d.expenses||[]).some(e=>Math.abs(num(e.amount)-Math.abs(x.amount))<=Math.max(0.5,Math.abs(x.amount)*0.01)&&Math.abs((new Date(e.date)-new Date(x.date))/86400000)<=3);
+  const inDash=(x)=>dashCovers(x,d);
   let added=0;
+  // items already waiting in the inbox that DASH now covers are cleared
+  S.finvault.flags.forEach(f=>{ if(f.status==="new"&&f.cat==="BIZ_UBER"&&d&&dashCovers({desc:f.desc, amount:-f.amount, date:f.date},d)){ f.status="handled in DASH"; f.auto=true; added++; } });
   inRange.forEach(x=>{
     if(x.amount>=0||x.fvCat==="Transfer") return;
     let hit=null;
