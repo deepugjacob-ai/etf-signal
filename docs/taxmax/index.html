@@ -57,6 +57,17 @@ a{color:var(--teal)}
 .mobile-menu button{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);color:var(--ink);padding:14px 18px;font-size:15px}
 .mobile-menu button.on{color:var(--teal);background:rgba(20,184,166,.10)}
 @media(max-width:640px){
+  table.fvlist{display:block;white-space:normal;overflow:visible}
+  table.fvlist tbody,table.fvlist tr,table.fvlist td{display:block;width:auto}
+  table.fvlist tr:first-child{display:none}
+  table.fvlist tr{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 10px}
+  table.fvlist td{border:0;padding:2px 0;text-align:left}
+  table.fvlist td.num:first-child{font-size:11.5px;color:var(--ink-dim)}
+  table.fvlist td:last-child{white-space:normal;margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  table.mtlist td:last-child{display:block;margin-top:2px}
+  table.mtlist td.money{font-size:15px;font-weight:600}
+}
+@media(max-width:640px){
   .app{flex-direction:column;min-height:auto}
   .nav{display:none!important}  /* desktop sidebar hidden on phones; use hamburger menu instead */
   .main{padding:14px 12px 60px}
@@ -1133,7 +1144,7 @@ async function refreshLinks(opts){
   if(!S.sync||!S.sync.token||LINKS.busy) return;
   LINKS.busy=true; LINKS.lastAt=Date.now();
   const L=linksCfg(); let list=null;
-  const getList=async()=>list||(list=await gh("/gists?per_page=100"));
+  const getList=async()=>list||(list=(await gh("/gists?per_page=100")).slice().sort((a,b)=>String(b.updated_at||"").localeCompare(String(a.updated_at||""))));
   try{
     if(L.dash!==false){
       try{
@@ -1234,25 +1245,54 @@ const FV_EXTRA_RULES=[
  {re:/ugreen|anker|belkin|logitech|dell|lenovo|asus|samsung.*monitor/i, cat:"D5", why:"Possible work equipment (over $300 goes in the Asset Register)"},
  {re:/engineers australia|aipm|pmi\b|acs\b|cpa australia|ca anz|ahpra/i, cat:"D5", why:"Professional membership"}
 ];
-/* Scan FinVault transactions for the active FY and add review items to the inbox. */
+/* Scan FinVault transactions for the active FY and add review items to the inbox.
+   Repeat charges: once you accept a merchant (say a monthly AI subscription), later charges
+   from it at a similar amount are added to the same claim at the same work-use %, so no
+   month is forgotten. Once you say "Not a claim", the same charge is not asked again. */
+function fvNear(a,b){ a=Math.abs(num(a)); b=Math.abs(num(b)); return Math.abs(a-b)<=Math.max(1, b*0.15); }
+function fvRuleLine(rule){
+  if(!rule||!rule.lineId) return null;
+  if(rule.target==="person") return ((S.people[rule.pk]||{}).deductions||[]).find(d=>d.id===rule.lineId)||null;
+  const b=S.business[rule.target]; return b?((b.expenses||[]).find(e=>e.id===rule.lineId)||null):null;
+}
+function fvRuleLabel(rule){ return rule.base+" (bank feed"+(rule.n>1?", "+rule.n+" charges":"")+(rule.pct<100?", "+rule.pct+"% work use":"")+")"; }
+function fvAbsorb(rule, x){
+  const line=fvRuleLine(rule); if(!line) return false;
+  const amt=Math.abs(num(x.amount));
+  line.amount=r2n(num(line.amount)+Math.round(amt*rule.pct)/100);
+  rule.n=(rule.n||1)+1; rule.last=amt; line.label=fvRuleLabel(rule);
+  line.notes=(line.notes||"")+" Plus "+(x.date||"")+" "+money(amt,2)+".";
+  return true;
+}
 function scanFinVault(){
   if(!LINKS.fvTxns||linksCfg().fv===false) return false;
   const tx=LINKS.fvTxns.map(t=>({date:String(t.date||"").slice(0,10), desc:String(t.description||""), amount:num(t.amount), fvCat:t.category||"", account:t.account||""}));
   S.finvault.txns=tx; S.finvault.linkedAt=LINKS.fvAt||"";
-  const inRange=tx.filter(inFY);
+  const inRange=tx.filter(inFY).sort((a,b)=>a.date.localeCompare(b.date));
   const keyOf=f=>(f.date||"")+"|"+f.desc+"|"+num(f.amount).toFixed(2);
-  const existing=new Set(S.finvault.flags.map(keyOf)), oldKeys=new Set(S.finvault.flags.map(f=>f.desc+"|"+f.amount));
+  const existing=new Set(S.finvault.flags.map(keyOf));
+  const legacy=new Set(S.finvault.flags.filter(f=>!f.date).map(f=>f.desc+"|"+f.amount));
+  const ruleFor={}, noFor={};
+  S.finvault.flags.forEach(f=>{ if(f.rule&&f.rule.mk&&fvRuleLine(f.rule)) ruleFor[f.rule.mk]=f.rule;
+    else if(f.status==="not a claim"){ const m=merchantKey(f.desc); if(m) (noFor[m]=noFor[m]||[]).push(f.amount); } });
   const d=dashActive()?dashFY():null;
   const inDash=(x)=>d&&(d.expenses||[]).some(e=>Math.abs(num(e.amount)-Math.abs(x.amount))<=Math.max(0.5,Math.abs(x.amount)*0.01)&&Math.abs((new Date(e.date)-new Date(x.date))/86400000)<=3);
   let added=0;
-  inRange.forEach((x,i)=>{
+  inRange.forEach(x=>{
     if(x.amount>=0||x.fvCat==="Transfer") return;
     let hit=null;
     for(const r of FV_EXTRA_RULES){ if(r.re.test(x.desc)){ hit=r; break; } }
     if(!hit){ for(const r of FV_RULES){ if(r.re.test(x.desc)){ hit=r; break; } } }
     if(!hit) return;
     const f={date:x.date, desc:x.desc, amount:Math.abs(x.amount), cat:hit.cat, why:hit.why, status:"new", conf:"rule", src:"finvault", account:x.account};
-    const k=keyOf(f); if(existing.has(k)||oldKeys.has(f.desc+"|"+f.amount)) return;
+    const k=keyOf(f); if(existing.has(k)||legacy.has(f.desc+"|"+f.amount)) return;
+    const m=merchantKey(x.desc);
+    const rule=m&&ruleFor[m];
+    if(rule&&fvNear(f.amount,rule.last)&&fvAbsorb(rule,f)){
+      f.status="added automatically to "+(rule.target==="person"?pname(rule.pk):bizName(rule.target))+(rule.pct<100?" at "+rule.pct+"%":""); f.auto=true;
+      S.finvault.flags.push(f); existing.add(k); added++; return;
+    }
+    if(m&&(noFor[m]||[]).some(a=>fvNear(f.amount,a))){ f.status="not a claim"; f.auto=true; S.finvault.flags.push(f); existing.add(k); added++; return; }
     if(alreadyClaimed({desc:x.desc, amount:x.amount, date:x.date})) return;
     if(f.cat==="BIZ_UBER"&&d){ if(inDash(x)) return; f.why="Car / Uber cost that is NOT in DASH. Add it in DASH so it is claimed once, with the logbook %."; f.dashMissing=true; }
     S.finvault.flags.push(f); existing.add(k); added++;
@@ -2037,7 +2077,15 @@ function renderSetup(m){
     S.sync.token=m.querySelector("#su_tok").value.trim(); S.sync.passphrase=m.querySelector("#su_pass").value.trim(); S.sync.auto=true; S.sync.lastSeenVersion=""; S.sync.lastPush=null;
     if(!S.sync.token||!S.sync.passphrase) return toast("Enter the token and passphrase used on your other device",true);
     await syncPull({force:true});
-    if(S.sync.lastSeenVersion){ S.meta.setupDone=true; save({meta:true}); render(); toast("Loaded from your other device. Sync is now automatic."); }
+    if(S.sync.lastSeenVersion){
+      S.meta.setupDone=true; save({meta:true});
+      // open the year you are working in now (the one holding today's date), not whichever year this blank device started on
+      const d=new Date(), y=d.getMonth()>=6?d.getFullYear():d.getFullYear()-1, nowFY=y+"-"+String((y+1)%100).padStart(2,"0");
+      const fys=knownFYs(); const target=fys.indexOf(nowFY)>=0?nowFY:fys.slice().sort().pop();
+      if(target&&target!==S.meta.activeFY) switchFY(target);
+      render(); toast("Loaded from your other device. Sync is now automatic.");
+      refreshLinks({force:true, render:true});
+    }
   };
   m.querySelector("#su_restore").onclick=()=>{ const i=document.createElement("input"); i.type="file"; i.accept=".json"; i.onchange=async()=>{ const t=await i.files[0].text(); try{ await importFullBackup(t); if(!S.meta.setupDone){S.meta.setupDone=true; save();} render(); }catch(e){ toast("Restore failed: "+e.message,true);} }; i.click(); };
 }
@@ -2685,7 +2733,7 @@ VIEWS.assets=(m)=>{
   (legacy.length?'<div class="note" style="border-color:var(--gold);margin-bottom:12px"><b>'+legacy.length+' one-off depreciation line(s) from the older version.</b> These only count in this year and won’t roll into next year. Convert each to a register entry so future years are automatic.'+
     legacy.map((x,i)=>'<div class="row" style="margin-top:6px;align-items:center"><span style="flex:1">'+esc(pname(x.pk))+': '+esc(x.d.label)+' <span class="hint">'+money(x.d.amount)+'</span></span><button class="btn sm legconv" data-i="'+i+'">Convert</button></div>').join("")+'</div>':'')+
   '<div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">Assets</h3><button class="btn" id="addAsset">+ Add asset</button></div>'+
-  (list.length?'<table><tr><th>Asset</th><th>Owner</th><th class="num">Cost</th><th>Start</th><th>Method</th><th class="num">Opening</th><th class="num">FY'+esc(fyl)+' claim</th><th>Earlier years</th><th></th></tr>'+
+  (list.length?'<table class="fvlist"><tr><th>Asset</th><th>Owner</th><th class="num">Cost</th><th>Start</th><th>Method</th><th class="num">Opening</th><th class="num">FY'+esc(fyl)+' claim</th><th>Earlier years</th><th></th></tr>'+
     list.map((a,i)=>{
       const y=assetYear(a,fyl); const claim=y.decline*assetTaxablePct(a)/100;
       const ms=assetMissedYears(a);
@@ -2702,7 +2750,7 @@ VIEWS.assets=(m)=>{
   '</div>'+
   (missed.length?'<div class="card" style="margin-top:12px"><h3>Earlier-year slices <span class="tag">amend, don’t roll forward</span></h3>'+
     '<div class="hint" style="margin-bottom:8px">Decline in value happens each year whether or not you claim it. A slice you missed can only be recovered by amending THAT year’s return (generally within 2 years of its notice of assessment); it can’t be added to this year. Mark each as claimed, or not claimed so the tool reminds you to amend.</div>'+
-    '<table><tr><th>Asset</th><th>Year</th><th class="num">Amount</th><th>Status</th></tr>'+
+    '<table class="fvlist"><tr><th>Asset</th><th>Year</th><th class="num">Amount</th><th>Status</th></tr>'+
     missed.map(x=>'<tr><td>'+esc(x.a.label)+'</td><td>FY'+esc(x.fy)+'</td><td class="num">'+money(x.amount)+'</td><td><select class="amark" data-id="'+x.a.id+'" data-fy="'+x.fy+'"><option value="unknown"'+(x.status==="unknown"?" selected":"")+'>Not sure</option><option value="claimed">Claimed in that return</option><option value="not"'+(x.status==="not"?" selected":"")+'>Not claimed: amend</option></select></td></tr>').join("")+'</table></div>':'')+
   '<div class="card" style="margin-top:12px"><h3>How the methods compare <span class="tag">legal maximising</span></h3><div class="hint">'+
    '<b>Low-value pool</b> (cost under $1,000): 18.75% in the first year no matter which month you bought it, then 37.5% a year. For a $900 desk or chair this is usually far more than prime cost over 10–20 years. Once an item is in the pool it stays there, and the pool is used for all later low-cost assets too.<br>'+
@@ -3302,6 +3350,10 @@ function alreadyClaimed(x){
   // business expenses
   for(const bk of ["uber","meridian"]) for(const e of (S.business[bk].expenses||[]))
     if(near(e.amount)&&textHit(e.label)) return {where:bizName(bk)+" expense", label:e.label};
+  // the Asset Register: same cost, bought within a week of the bank charge
+  const xd=new Date(String(x.date||"").slice(0,10));
+  for(const a of (S.assets||[]))
+    if(near(a.cost)&&(!x.date||isNaN(xd)||Math.abs((new Date(a.purchaseDate)-xd)/86400000)<=7)) return {where:"Asset Register", label:a.label};
   // accepted finvault flags
   for(const f of (S.finvault.flags||[]))
     if(f.status&&f.status!=="new"&&near(f.amount)&&textHit(f.desc)) return {where:"already accepted", label:f.desc};
@@ -3376,7 +3428,7 @@ VIEWS.fin=(m)=>{
     (d?'<div class="hint" style="margin-top:4px">FY'+esc(FY.label)+': income '+money(d.income.total)+', car '+money(d.car.chosen)+' ('+(d.car.method==="cents"?"cents per km":"logbook "+r2n(d.car.bizPct)+"%")+'), other costs '+money(d.other.total)+'. Shown in the Business tab.</div>':'')+'</div>'+
   '</div>'+
   '<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h3 style="margin:0">To review <span class="tag">'+newCount+' new</span></h3><label style="margin:0"><input type="checkbox" id="fvAll" '+(S.fvShowAll?"checked":"")+' style="width:auto"> show handled</label></div>'+
-  (order.length?'<table style="margin-top:8px"><tr><th>Date</th><th>Description</th><th class="num">$</th><th>Suggested</th><th>Why</th><th></th></tr>'+
+  (order.length?'<table class="fvlist" style="margin-top:8px"><tr><th>Date</th><th>Description</th><th class="num">$</th><th>Suggested</th><th>Why</th><th></th></tr>'+
   order.map(([f,i])=>'<tr'+(f.status!=="new"?' style="opacity:.5"':'')+'><td class="num">'+esc(f.date)+'</td><td>'+esc(f.desc)+(f.account?'<div class="hint">'+esc(f.account)+'</div>':'')+'</td><td class="num">'+money(f.amount,2)+'</td><td>'+esc(f.cat)+'</td><td class="hint">'+esc(f.why)+(f.conf==="ai"?' <span class="pill gold">AI</span>':'')+'</td>'+
   '<td style="white-space:nowrap">'+(f.status!=="new"?esc(f.status):(f.dashMissing?'<span class="hint">add it in DASH</span> <button class="btn sm dim fvno" data-i="'+i+'">Done</button>':
     '<select data-fp="'+i+'" style="font-size:11px">'+peopleOptions()+'</select> <input type="number" data-fpct="'+i+'" value="'+(/D9|D10|D15|D4/.test(f.cat)?100:(/phone|internet|software|subscription|ai |security|vpn/i.test(f.why)?50:100))+'" style="width:58px" title="work-use %">% <button class="btn sm fvok" data-i="'+i+'">Accept</button> <button class="btn sm dim fvno" data-i="'+i+'">Not a claim</button>'))+'</td></tr>').join("")+'</table>'
@@ -3484,13 +3536,29 @@ VIEWS.fin=(m)=>{
     const f=S.finvault.flags[b.dataset.i];
     const pk=m.querySelector('select[data-fp="'+b.dataset.i+'"]').value;
     const pctEl=m.querySelector('[data-fpct="'+b.dataset.i+'"]'); const pct=Math.max(0,Math.min(100,num(pctEl?pctEl.value:100)||100));
-    const amt=Math.round(f.amount*pct)/100; const note="From bank feed "+(f.date||"")+": "+f.desc+(pct<100?" at "+pct+"% work use":"")+". Attach the receipt or invoice.";
-    if(f.cat==="BIZ_UBER"){ S.business.uber.expenses.push({id:uid(),label:f.desc+(pct<100?" ("+pct+"%)":""),amount:amt,notes:note}); }
-    else if(f.cat==="BIZ_MER"){ S.business.meridian.expenses.push({id:uid(),label:f.desc+(pct<100?" ("+pct+"%)":""),amount:amt,notes:note}); }
+    // Equipment over $300 cannot be claimed outright by an employee: it goes in the Asset Register
+    // and is claimed over its effective life (or pooled). Ask what the item is, then add it there.
+    if(f.cat==="D5"&&f.amount>300&&/equipment/i.test(f.why||"")){
+      assetEditor({label:"", owner:pk, cost:f.amount, purchaseDate:f.date, workPct:pct, cat:"D5"}, (a)=>{
+        f.status="asset -> "+pname(pk)+" ("+(a.label||"item")+")"; f.assetId=a.id; save(); render(); });
+      toast("Over $300, so it is claimed over its life. Say what the item is (e.g. monitor, desk) and save.");
+      return;
+    }
+    const amt=Math.round(f.amount*pct)/100; const note="From bank feed "+(f.date||"")+": "+f.desc+" "+money(f.amount,2)+(pct<100?" at "+pct+"% work use":"")+". Attach the receipt or invoice.";
+    const lineId=uid(); const base=f.cat==="BIZ_UBER"||f.cat==="BIZ_MER"?f.desc:f.desc+" ("+f.why.split(" (")[0].slice(0,40)+")";
+    const target=f.cat==="BIZ_UBER"?"uber":f.cat==="BIZ_MER"?"meridian":f.cat==="RENT"?"":"person";
+    const rule=target?{mk:merchantKey(f.desc), pct, pk, target, lineId, base, last:f.amount, n:1}:null;
+    const label=rule?fvRuleLabel(rule):f.desc;
+    if(target==="uber"){ S.business.uber.expenses.push({id:lineId,src:"fv",label,amount:amt,notes:note}); }
+    else if(target==="meridian"){ S.business.meridian.expenses.push({id:lineId,src:"fv",label,amount:amt,notes:note}); }
     else if(f.cat==="RENT"){ S.property.rental.other=num(S.property.rental.other)+amt; }
-    else { S.people[pk].deductions.push({id:uid(),src:"fv",cat:f.cat.startsWith("D")?f.cat:"D5",label:f.desc+" ("+f.why.slice(0,40)+")",amount:amt,evidence:[],notes:note,needsReceipt:true}); }
+    else { S.people[pk].deductions.push({id:lineId,src:"fv",cat:f.cat.startsWith("D")?f.cat:"D5",label,amount:amt,evidence:[],notes:note,needsReceipt:true}); }
     f.status="accepted"+(pct<100?" at "+pct+"%":"")+" -> "+(f.cat==="RENT"?"rental":f.cat.startsWith("BIZ")?"business":pname(pk));
-    save(); render(); toast("Added. Now link its receipt in the Vault.");
+    let more=0;
+    if(rule&&rule.mk){ f.rule=rule;
+      S.finvault.flags.forEach(o=>{ if(o!==f&&o.status==="new"&&!o.dashMissing&&merchantKey(o.desc)===rule.mk&&fvNear(o.amount,rule.last)&&fvAbsorb(rule,o)){
+        o.status="added automatically to "+(target==="person"?pname(pk):bizName(target))+(pct<100?" at "+pct+"%":""); o.auto=true; more++; } }); }
+    save(); render(); toast(more?"Added, with "+more+" more charge"+(more===1?"":"s")+" from the same merchant. Future charges will be added automatically.":"Added. Future charges from this merchant will be added automatically. Now link its receipt in the Vault.");
   });
   m.querySelectorAll(".fvno").forEach(b=>b.onclick=()=>{ const f=S.finvault.flags[b.dataset.i]; f.status=f.dashMissing?"handled in DASH":"not a claim"; save(); render(); });
 
@@ -3588,7 +3656,7 @@ VIEWS.lodge=(m)=>{
     if(rent<0) R("Income tests","Net rental property loss", money(-rent),"IT6");
     return '<div class="sheet" id="sheet_'+pk+'"><h3>myTax handoff schedule: '+P.name+' &middot; FY'+FY.label+'</h3>'+
       '<h4>Estimated outcome: '+(c.refund>=0?"refund ":"payable ")+money(Math.abs(c.refund))+'</h4>'+
-      '<table><tr><th style="width:120px">myTax location</th><th>Field</th><th style="width:130px">Enter</th><th>Note</th></tr>'+
+      '<table class="fvlist mtlist"><tr><th style="width:120px">myTax location</th><th>Field</th><th style="width:130px">Enter</th><th>Note</th></tr>'+
       rows.map(r=>'<tr><td><span class="loc">'+esc(r.loc)+'</span></td><td>'+esc(r.label)+'</td><td class="money">'+esc(r.val)+' <button class="copybtn" data-c="'+esc(String(r.val).replace(/[$,]/g,""))+'">copy</button></td><td class="note">'+esc(r.note)+'</td></tr>').join("")+
       '</table><div class="note" style="margin-top:10px">Order of play in myTax: 1) Personalise return: tick salary'+(pk==="deepu"?", business/sole trader":"")+', rent, capital gains, deductions, spouse. 2) Verify every prefilled number against this sheet. 3) Enter deductions. 4) Medicare and spouse sections. 5) Save the estimate screen as PDF into the Evidence Vault before submitting.</div></div>';
   };
