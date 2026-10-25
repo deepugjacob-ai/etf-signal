@@ -1144,6 +1144,15 @@ function gistVersion(g){ return (g.history&&g.history[0]&&g.history[0].version)|
 /* DASH figures for the active FY (DASH keys years by the 30 June year) */
 function dashFY(){ const p=LINKS.dash; if(!p||!p.years||linksCfg().dash===false) return null; return p.years[FY.end.slice(0,4)]||null; }
 function dashActive(){ return !!dashFY() && bizOn("uber") && isRideshare("uber"); }
+/* redraw now, unless the person is typing or has a dialog open: then wait until they finish */
+let pendingRender=null;
+function busyEditing(){ const a=document.activeElement; const dlg=document.querySelector("dialog[open]"); return !!dlg||!!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)&&a.closest("#main")); }
+function safeRender(msg){
+  if(!busyEditing()){ render(); if(msg) toast(msg); return; }
+  pendingRender=msg||pendingRender||"";
+  const later=()=>{ if(busyEditing()) return; document.removeEventListener("focusout",later2); clearInterval(t); const m=pendingRender; pendingRender=null; render(); if(m) toast(m); };
+  const later2=()=>setTimeout(later,300); document.addEventListener("focusout",later2); const t=setInterval(later,5000);
+}
 async function refreshLinks(opts){
   opts=opts||{};
   if(!S.sync||!S.sync.token||LINKS.busy) return;
@@ -1184,7 +1193,7 @@ async function refreshLinks(opts){
     }
     const changed=applyLinks();
     if(dashActive()) await importDashReceipts();
-    if(changed||opts.render) render();
+    if(changed||opts.render) safeRender(changed&&opts.quiet?"New data from DASH or FinVault added.":"");
   } finally { LINKS.busy=false; }
 }
 /* Put linked data into the active FY workspace. Returns true if anything changed. */
@@ -4057,7 +4066,9 @@ try{ const vc=vaultAssetCandidates(); if(vc.length) setTimeout(()=>toast(vc.leng
 render();
 autoPullOnOpen();
 if(S.sync&&S.sync.token){ setTimeout(()=>refreshLinks(),1200);
-  document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"&&Date.now()-LINKS.lastAt>120000) refreshLinks(); }); }
+  document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"&&Date.now()-LINKS.lastAt>120000) refreshLinks({quiet:true}); });
+  // While TaxMax stays open, look for new DASH / FinVault data every 3 minutes
+  setInterval(()=>{ if(document.visibilityState==="visible"&&Date.now()-LINKS.lastAt>170000) refreshLinks({quiet:true}); },60000); }
 </script>
 </body>
 </html>
