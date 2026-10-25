@@ -409,7 +409,10 @@ function load(){
 let saveT=null, saveGenuine=false;
 // save({meta:true}) = bookkeeping only (sync status, year switch): it must not make this
 // device's copy look "newer" than a real edit made on another device.
-function save(opts){ if(!(opts&&opts.meta) && !syncSuppress) saveGenuine=true; clearTimeout(saveT); saveT=setTimeout(()=>{ try{
+function save(opts){ if(!(opts&&opts.meta) && !syncSuppress) saveGenuine=true; clearTimeout(saveT); savePending=true; saveT=setTimeout(saveNow,250); }
+/* write to storage now (also called when the page is hidden or closed, so a quick close never loses an edit) */
+var savePending=false;
+function saveNow(){ clearTimeout(saveT); if(!savePending) return; savePending=false; try{
   const active=S.meta.activeFY||"2025-26";
   // Don't persist a large raw transaction dump: it bloats storage and every backup/sync.
   // The FLAGS (the useful output) are kept; raw txns stay in memory for this session only.
@@ -425,7 +428,9 @@ function save(opts){ if(!(opts&&opts.meta) && !syncSuppress) saveGenuine=true; c
   knownFYs().forEach(fy=>{ if(fy===active) return; const k=fyKey(fy); const raw=localStorage.getItem(k); if(!raw) return;
     try{ const o=JSON.parse(raw); o.cfg=S.cfg; o.ai=S.ai; o.sync=S.sync; o.assets=S.assets; localStorage.setItem(k, JSON.stringify(o)); }catch(e){} });
   if(genuine) scheduleAutoPush();
-}catch(e){ toast("Save failed: storage full. Clear loaded transactions in FinVault, then export a backup.",true);} },250); }
+}catch(e){ toast("Save failed: storage full. Clear loaded transactions in FinVault, then export a backup.",true);} }
+window.addEventListener("pagehide",saveNow);
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="hidden") saveNow(); });
 
 // Switch the working year. Persists current, loads (or creates) the target, applies its rates.
 function switchFY(label){
@@ -1572,6 +1577,29 @@ function importLegacyAssets(){
   if(added.length){ S.cfg.updatedAt=new Date().toISOString(); syncAssetLines(); save(); }
   return added;
 }
+/* Purchases over $300 sitting in an EARLIER year's Evidence Vault that are not in the register yet.
+   The receipt reader saved vendor/date/total/assetLikely/effectiveLifeYears for each document. */
+function vaultAssetCandidates(){
+  const active=S.meta.activeFY||FY.label, skip=(S.cfg.vaultAssetSkip||{}), out=[], seen=new Set();
+  const inReg=(id,cost,date)=>(S.assets||[]).some(a=>(id&&a.docId===id)||(num(a.cost)===num(cost)&&a.purchaseDate===date));
+  const t=new Date(), ty=t.getMonth()>=6?t.getFullYear():t.getFullYear()-1, nowFY=ty+"-"+String((ty+1)%100).padStart(2,"0");
+  knownFYs().filter(fy=>fy<active||fy<nowFY).forEach(fy=>{
+    let ws=null; if(fy===active) ws=S; else { try{ ws=JSON.parse(localStorage.getItem(fyKey(fy))||"null"); }catch(e){} }
+    ((ws&&ws.docs)||[]).forEach(d=>{
+      const x=d.extract||{}; const total=num(x.total); const date=String(x.date||"").slice(0,10);
+      if(!d.id||seen.has(d.id)||skip[d.id]||total<=300) return;
+      if(x.isHouseholdBill||num(x.billPeriodMonths)>0) return;                       // bills and subscriptions are not assets
+      const text=(x.summary||"")+" "+(x.vendor||"")+" "+(d.name||"");
+      const life=num(x.effectiveLifeYears)||guessLife(text);
+      if(!x.assetLikely&&!life) return;
+      if(inReg(d.id,total,date)) return;
+      seen.add(d.id);
+      out.push({fy, doc:d, label:(x.summary||x.vendor||d.name||"Item").slice(0,60), vendor:x.vendor||"", cost:total, date:/^\d{4}-\d{2}-\d{2}$/.test(date)?date:"", life,
+        owner:(x.suggestedPerson==="bhavana"?"bhavana":"deepu"), pct:num(x.workUsePctGuess)||100});
+    });
+  });
+  return out.sort((a,b)=>a.date.localeCompare(b.date));
+}
 /* Turn the register into this FY's deduction / business-expense lines (src "asset_<id>"). */
 function syncAssetLines(){
   S.assets=S.assets||[];
@@ -1580,6 +1608,7 @@ function syncAssetLines(){
   const want={}; // src -> {pk|bk, amount, label, notes, evidence, cat}
   S.assets.forEach(a=>{
     if(a.legacy&&a.legacy.fy===fyl) return; // lodged with the older app: that year's own line stands
+    if(Object.entries(a.claimedYears||{}).some(([f,v])=>v==="full"&&f<fyl)) return; // fully claimed earlier: amend that year first
     const y=assetYear(a, fyl); if(y.decline<=0) return;
     const pcts=assetOwnerPcts(a);
     Object.keys(pcts).forEach(who=>{
@@ -2767,6 +2796,7 @@ VIEWS.assets=(m)=>{
   const thisYear=list.reduce((t,a)=>t+assetYear(a,fyl).decline*assetTaxablePct(a)/100,0);
   const missed=list.flatMap(a=>assetMissedYears(a).filter(x=>x.status!=="not-needed").map(x=>Object.assign({a},x)));
   const legacy=legacyDeclineLines();
+  const found=vaultAssetCandidates();
   m.innerHTML=head("Asset register","Every work or business item over $300 lives here once, across all financial years. The tool works out each year’s decline in value automatically: an item bought part-way through a year is pro-rated by days held, then claimed in each later year until written off. Switch the FY at the top-left and the right amount appears in that year’s deductions.")+
   '<div class="grid g3" style="margin-bottom:14px">'+
    '<div class="card"><h3>Claimable in FY'+esc(fyl)+'</h3><div class="num" style="font-size:26px;color:var(--green)">'+money(thisYear)+'</div><div class="hint">work-use share of this year’s decline, already in the deductions ledger</div></div>'+
@@ -2775,6 +2805,15 @@ VIEWS.assets=(m)=>{
   '</div>'+
   (legacy.length?'<div class="note" style="border-color:var(--gold);margin-bottom:12px"><b>'+legacy.length+' one-off depreciation line(s) from the older version.</b> These only count in this year and won’t roll into next year. Convert each to a register entry so future years are automatic.'+
     legacy.map((x,i)=>'<div class="row" style="margin-top:6px;align-items:center"><span style="flex:1">'+esc(pname(x.pk))+': '+esc(x.d.label)+' <span class="hint">'+money(x.d.amount)+'</span></span><button class="btn sm legconv" data-i="'+i+'">Convert</button></div>').join("")+'</div>':'')+
+  (found.length?'<div class="card" style="margin-bottom:12px;border-color:var(--gold)"><h3>Found in your earlier Evidence Vaults <span class="tag">'+found.length+' to review</span></h3>'+
+    '<div class="hint" style="margin-bottom:8px">Receipts over $300 that look like equipment or furniture but are not in the register. Each keeps being claimed for years. Say how it went in that year\u2019s return, check the work-use % and life, then add it.</div>'+
+    '<table class="fvlist"><tr><th>Receipt</th><th class="num">Cost</th><th>Bought</th><th>Who / work %</th><th>Life</th><th>In that year\u2019s return</th><th></th></tr>'+
+    found.map((c,i)=>'<tr><td><input data-vl="'+i+'" value="'+esc(c.label)+'" style="min-width:130px"><div class="hint">'+esc(c.vendor)+' · '+esc(c.doc.name||"")+' · FY'+esc(c.fy)+' vault</div></td><td class="num">'+money(c.cost,2)+'</td>'+
+      '<td><input type="date" data-vd="'+i+'" value="'+esc(c.date)+'" style="width:auto;max-width:150px"></td>'+
+      '<td><select data-vo="'+i+'" style="width:auto;max-width:130px">'+ownerOptions(c.owner)+'</select> <input type="number" data-vp="'+i+'" value="'+c.pct+'" style="width:58px">%</td>'+
+      '<td><input type="number" step="any" data-vy="'+i+'" value="'+(c.life||"")+'" style="width:58px" placeholder="yrs"></td>'+
+      '<td><select data-vs="'+i+'" style="width:auto;max-width:150px"><option value="claimed">Part claimed</option><option value="full">Whole cost claimed</option><option value="not" selected>Not claimed</option></select></td>'+
+      '<td><button class="btn sm vfadd" data-i="'+i+'">Add</button><button class="btn sm dim vfskip" data-i="'+i+'" style="margin-top:4px">Not an asset</button></td></tr>').join("")+'</table></div>':'')+
   '<div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">Assets</h3><button class="btn" id="addAsset">+ Add asset</button></div>'+
   (list.length?'<table class="fvlist"><tr><th>Asset</th><th>Owner</th><th class="num">Cost</th><th>Start</th><th>Method</th><th class="num">Opening</th><th class="num">FY'+esc(fyl)+' claim</th><th>Earlier years</th><th></th></tr>'+
     list.map((a,i)=>{
@@ -2795,7 +2834,7 @@ VIEWS.assets=(m)=>{
   (missed.length?'<div class="card" style="margin-top:12px"><h3>Earlier-year slices <span class="tag">amend, don’t roll forward</span></h3>'+
     '<div class="hint" style="margin-bottom:8px">Decline in value happens each year whether or not you claim it. A slice you missed can only be recovered by amending THAT year’s return (generally within 2 years of its notice of assessment); it can’t be added to this year. Mark each as claimed, or not claimed so the tool reminds you to amend.</div>'+
     '<table class="fvlist"><tr><th>Asset</th><th>Year</th><th class="num">Amount</th><th>Status</th></tr>'+
-    missed.map(x=>'<tr><td>'+esc(x.a.label)+'</td><td>FY'+esc(x.fy)+'</td><td class="num">'+money(x.amount)+'</td><td><select class="amark" data-id="'+x.a.id+'" data-fy="'+x.fy+'"><option value="unknown"'+(x.status==="unknown"?" selected":"")+'>Not sure</option><option value="claimed">Claimed in that return</option><option value="not"'+(x.status==="not"?" selected":"")+'>Not claimed: amend</option></select></td></tr>').join("")+'</table></div>':'')+
+    missed.map(x=>'<tr><td>'+esc(x.a.label)+'</td><td>FY'+esc(x.fy)+'</td><td class="num">'+money(x.amount)+'</td><td><select class="amark" data-id="'+x.a.id+'" data-fy="'+x.fy+'"><option value="unknown"'+(x.status==="unknown"?" selected":"")+'>Not sure</option><option value="claimed">Claimed in that return</option><option value="not"'+(x.status==="not"?" selected":"")+'>Not claimed: amend</option><option value="full"'+(x.status==="full"?" selected":"")+'>Claimed in full: amend to this</option></select></td></tr>').join("")+'</table></div>':'')+
   '<div class="card" style="margin-top:12px"><h3>How the methods compare <span class="tag">legal maximising</span></h3><div class="hint">'+
    '<b>Low-value pool</b> (cost under $1,000): 18.75% in the first year no matter which month you bought it, then 37.5% a year. For a $900 desk or chair this is usually far more than prime cost over 10–20 years. Once an item is in the pool it stays there, and the pool is used for all later low-cost assets too.<br>'+
    '<b>Diminishing value</b>: 200% ÷ effective life on the falling balance. Bigger deductions early, smaller later.<br>'+
@@ -2806,6 +2845,22 @@ VIEWS.assets=(m)=>{
   m.querySelectorAll(".aedit").forEach(b=>b.onclick=()=>assetEditor(S.assets[Number(b.dataset.i)]));
   m.querySelectorAll(".adel").forEach(b=>b.onclick=()=>{ if(!confirm("Remove this asset from every year?")) return; const gone=S.assets.splice(Number(b.dataset.i),1)[0]; if(gone){ S.cfg.assetTombstones=(S.cfg.assetTombstones||[]).concat(gone.id); } syncAssetLines(); save(); render(); });
   m.querySelectorAll(".asched").forEach(b=>b.onclick=()=>assetScheduleModal(S.assets[Number(b.dataset.i)]));
+  m.querySelectorAll(".vfskip").forEach(b=>b.onclick=()=>{ const c=found[b.dataset.i]; S.cfg.vaultAssetSkip=S.cfg.vaultAssetSkip||{}; S.cfg.vaultAssetSkip[c.doc.id]=1; S.cfg.updatedAt=new Date().toISOString(); save(); render(); });
+  m.querySelectorAll(".vfadd").forEach(b=>b.onclick=()=>{
+    const i=b.dataset.i, c=found[i], v=k=>{ const el=m.querySelector('[data-'+k+'="'+i+'"]'); return el?el.value:""; };
+    const owner=v("vo"), pct=Math.max(0,Math.min(100,num(v("vp"))||100)), life=num(v("vy")), date=v("vd"), how=v("vs");
+    if(!date) return toast("Enter the date it was bought",true);
+    if(!life) return toast("Enter its effective life in years (the hint in Edit shows the ATO figure)",true);
+    const a={id:uid(), label:v("vl")||c.label, owner, cost:c.cost, purchaseDate:date, life, workPct:pct, cat:"D5", docId:c.doc.id, updatedAt:new Date().toISOString(),
+      claimedYears:{}, fromVault:c.fy};
+    if(owner==="both"){ a.pctDeepu=Math.round(pct/2); a.pctBhavana=pct-Math.round(pct/2); }
+    const fy0=fyLabelOf(date)||c.fy;
+    a.method=how==="not"?recommendMethod(Object.assign({},a,{method:""})):"pc";
+    if(how==="claimed") a.claimedYears[fy0]="claimed"; else if(how==="full") a.claimedYears[fy0]="full"; else a.claimedYears[fy0]="not";
+    S.assets.push(a); syncAssetLines(); save(); render();
+    toast(how==="full"?"Added. Because the whole cost was claimed in FY"+fy0+", later years stay at $0 until you amend that year (see Earlier-year slices).":
+      how==="not"?"Added. This year\u2019s share is in your deductions, and FY"+fy0+"\u2019s missed share is listed below to claim by amending.":"Added. This year\u2019s share is now in your deductions.");
+  });
   m.querySelectorAll(".amark").forEach(el=>el.onchange=()=>{ const a=S.assets.find(x=>x.id===el.dataset.id); a.claimedYears=a.claimedYears||{}; a.claimedYears[el.dataset.fy]=el.value; a.updatedAt=new Date().toISOString(); save(); render(); });
   m.querySelectorAll(".legconv").forEach(b=>b.onclick=()=>{
     const x=legacy[Number(b.dataset.i)]; const d=x.d;
@@ -3904,6 +3959,7 @@ if(S.ai && /^gemini-2\.0/.test(S.ai.geminiModel||"")){ S.ai.geminiModel="gemini-
 syncSharedBills();
 syncAssetLines();
 try{ const la=importLegacyAssets(); if(la.length) setTimeout(()=>toast(la.length+" item"+(la.length===1?"":"s")+" you claimed part of last year "+(la.length===1?"is":"are")+" now in the Asset Register, with this year's share added to your deductions."),800); }catch(e){ console.error(e); }
+try{ const vc=vaultAssetCandidates(); if(vc.length) setTimeout(()=>toast(vc.length+" purchase"+(vc.length===1?"":"s")+" over $300 in last year\u2019s Evidence Vault "+(vc.length===1?"is":"are")+" not in the Asset Register yet. Review "+(vc.length===1?"it":"them")+" in the Asset Register."),2600); }catch(e){ console.error(e); }
 render();
 autoPullOnOpen();
 if(S.sync&&S.sync.token){ setTimeout(()=>refreshLinks(),1200);
