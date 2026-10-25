@@ -1600,6 +1600,39 @@ function vaultAssetCandidates(){
   });
   return out.sort((a,b)=>a.date.localeCompare(b.date));
 }
+/* The invoice for a register asset belongs in the Evidence Vault of EVERY year that claims part
+   of it, so an audit of any one year has its proof. Files are stored once (shared by all years);
+   each year's vault just lists it. Carried entries are marked and removed if no longer claimed. */
+function findDocMeta(id){
+  for(const fy of knownFYs()){ let ws=null; if(fy===(S.meta.activeFY||"2025-26")) continue;
+    try{ ws=JSON.parse(localStorage.getItem(fyKey(fy))||"null"); }catch(e){}
+    const d=ws&&(ws.docs||[]).find(x=>x.id===id&&!x.carriedFor); if(d) return {meta:d, fy}; }
+  return null;
+}
+function docUsedElsewhere(id){
+  const active=S.meta.activeFY||"2025-26";
+  if((S.assets||[]).some(a=>a.docId===id)) return true;
+  return knownFYs().some(fy=>{ if(fy===active) return false; try{ const ws=JSON.parse(localStorage.getItem(fyKey(fy))||"null"); return !!(ws&&(ws.docs||[]).some(d=>d.id===id)); }catch(e){ return false; } });
+}
+function carryAssetDocs(){
+  const fyl=S.meta.activeFY||FY.label; S.docs=S.docs||[]; const want={}; let changed=false;
+  (S.assets||[]).forEach(a=>{
+    if(!a.docId) return;
+    const startFY=fyLabelOf(a.purchaseDate); if(!startFY||startFY>=fyl) return;     // bought this year: already in this vault
+    if(assetYear(a,fyl).decline<=0) return;                                           // nothing claimed this year
+    if(Object.entries(a.claimedYears||{}).some(([f,v])=>v==="full"&&f<fyl)) return;
+    want[a.docId]=a;
+  });
+  Object.keys(want).forEach(id=>{
+    const a=want[id], why="Decline in value claimed in FY"+fyl+": "+(a.label||"asset")+", bought "+a.purchaseDate+" for "+money(a.cost,2);
+    let d=S.docs.find(x=>x.id===id);
+    if(!d){ const f=findDocMeta(id); d=f?JSON.parse(JSON.stringify(f.meta)):{id, name:(a.label||"Asset")+" invoice", type:"", size:0, added:a.purchaseDate};
+      d.carriedFrom=f?f.fy:fyLabelOf(a.purchaseDate); d.carriedFor=a.id; S.docs.push(d); changed=true; }
+    if(d.carriedFor){ const c={target:a.owner, msg:why, when:a.purchaseDate}; if(JSON.stringify(d.claimed)!==JSON.stringify(c)){ d.claimed=c; changed=true; } }
+  });
+  const n=S.docs.length; S.docs=S.docs.filter(d=>!d.carriedFor||want[d.id]); if(S.docs.length!==n) changed=true;
+  return changed;
+}
 /* Turn the register into this FY's deduction / business-expense lines (src "asset_<id>"). */
 function syncAssetLines(){
   S.assets=S.assets||[];
@@ -1639,6 +1672,7 @@ function syncAssetLines(){
       else { e.label=v.label; e.amount=v.amount; }
     });
   });
+  try{ if(carryAssetDocs()) save({meta:true}); }catch(e){ console.error(e); }
 }
 /* Earlier-year slices that were never marked as claimed: these can only be recovered by amending that year. */
 function assetMissedYears(a){
@@ -3171,10 +3205,12 @@ VIEWS.vault=(m)=>{
     '<div style="flex:1"><b>'+esc(doc.name)+'</b> <span class="hint">'+(doc.size/1024).toFixed(0)+' KB &middot; '+esc(doc.added||"")+'</span>'+
     chip+
     (ex&&ex.claimableNote?'<div class="hint" style="color:var(--teal)">'+esc(ex.claimableNote)+'</div>':'')+
-    (doc.claimed?'<div class="hint" style="color:var(--gold)">Claimed '+esc(doc.claimed.when)+': '+esc(doc.claimed.msg)+'</div>':'')+
+    (doc.carriedFor?'<div class="hint" style="color:var(--teal,#3BD9A4)">From the FY'+esc(doc.carriedFrom||"")+' vault. '+esc((doc.claimed||{}).msg||"")+'</div>':
+     (doc.claimed?'<div class="hint" style="color:var(--gold)">Claimed '+esc(doc.claimed.when)+': '+esc(doc.claimed.msg)+'</div>':''))+
     '</div>'+
+    (doc.carriedFor?'<button class="btn sm ghost nba" data-t="assets">Asset Register</button>':
     '<button class="btn sm vclaim" data-id="'+doc.id+'">'+(doc.claimed?"Edit claim":(ex?"Review &amp; claim":"Claim it"))+'</button>'+
-    (doc.claimed?'<button class="btn sm dim vunclaim" data-id="'+doc.id+'">Remove claim</button>':'')+
+    (doc.claimed?'<button class="btn sm dim vunclaim" data-id="'+doc.id+'">Remove claim</button>':''))+
     '<button class="btn sm ghost vread" data-id="'+doc.id+'">'+(doc.extract?"Re-read":"AI read")+'</button>'+
     '<button class="btn sm dim vview" data-id="'+doc.id+'">View</button>'+
     '<button class="btn sm dim vdel" data-id="'+doc.id+'">Delete</button></div>';
@@ -3234,7 +3270,12 @@ VIEWS.vault=(m)=>{
       toast("Auto-read "+ok+" of "+readable.length+" invoices"+(fail?", "+fail+" need manual read":"")+". Each shows its amount and suggested category, click Claim to file.");
     }
   }
-  m.querySelectorAll(".vdel").forEach(b=>b.onclick=async()=>{ await idbDel(b.dataset.id); S.docs=S.docs.filter(d=>d.id!==b.dataset.id); ["deepu","bhavana"].forEach(pk=>S.people[pk].deductions.forEach(d=>d.evidence=(d.evidence||[]).filter(x=>x!==b.dataset.id))); save(); render(); });
+  m.querySelectorAll(".nba").forEach(b=>b.onclick=()=>go(b.dataset.t));
+  m.querySelectorAll(".vdel").forEach(b=>b.onclick=async()=>{ const id=b.dataset.id, dm=S.docs.find(d=>d.id===id);
+    if(dm&&dm.carriedFor) return toast("This invoice is here because FY"+(S.meta.activeFY||FY.label)+" claims part of that asset. To remove it, edit or remove the asset in the Asset Register.",true);
+    S.docs=S.docs.filter(d=>d.id!==id);
+    if(!docUsedElsewhere(id)) await idbDel(id); else toast("Removed from this year. The file is kept because another year or the Asset Register uses it.");
+    b.dataset.id=id; ["deepu","bhavana"].forEach(pk=>S.people[pk].deductions.forEach(d=>d.evidence=(d.evidence||[]).filter(x=>x!==b.dataset.id))); save(); render(); });
   m.querySelectorAll(".vview").forEach(b=>b.onclick=async()=>{ const rec=await idbGet(b.dataset.id); if(!rec) return toast("Missing blob",true); const url=URL.createObjectURL(rec.blob); window.open(url,"_blank"); });
   m.querySelectorAll(".vread").forEach(b=>b.onclick=async()=>{
     const doc=S.docs.find(d=>d.id===b.dataset.id); const rec=await idbGet(doc.id);
