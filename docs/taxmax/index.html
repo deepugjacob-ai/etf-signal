@@ -1798,6 +1798,14 @@ function applyAnswer(pk,qid,val){
    line from these bills because the rate already covers them. */
 function onFixedRate(pk){ return S.people[pk].deductions.some(d=>d.src==="wfh"&&num(d.amount)>0); }
 function billClaim(b,pk){ return Math.round(num(b.annual)*num(pk==="deepu"?b.pctDeepu:b.pctBhavana))/100; }
+/* The WFH fixed rate covers energy, internet, phone, stationery and computer consumables only.
+   Software and app subscriptions, and decline in value, are claimed on top of it. */
+function billInFixedRate(b){
+  if(b.kind==="depr") return false;
+  const t=(b.label||"")+" "+(b.fvMk||"");
+  if(/microsoft|office 365|m365|adobe|gemini|google one|claude|anthropic|openai|chatgpt|canva|notion|dropbox|otter|genspark|nord|software|subscription|licen[cs]e|\bapp\b/i.test(t)) return false;
+  return true;
+}
 function syncSharedBills(){
   S.sharedBills=S.sharedBills||[];
   ["deepu","bhavana"].forEach(pk=>{
@@ -1807,12 +1815,16 @@ function syncSharedBills(){
     P.deductions=P.deductions.filter(d=>{
       if(!String(d.src||"").startsWith("sb_")) return true;
       const b=S.sharedBills.find(x=>"sb_"+x.id===d.src);
-      return b && (b.kind==="depr"||!fixed) && billClaim(b,pk)>0;
+      return b && (!billInFixedRate(b)||!fixed) && billClaim(b,pk)>0;
     });
     S.sharedBills.forEach(b=>{
-      if(fixed&&b.kind!=="depr") return;
+      if(fixed&&billInFixedRate(b)) return;
       const amt=billClaim(b,pk); if(amt<=0) return;
       let d=P.deductions.find(x=>x.src==="sb_"+b.id);
+      // already claimed by hand as its own line (same item, same share): don't claim it twice
+      if(!d){ const words=String(b.label||"").toLowerCase().match(/[a-z]{4,}/g)||[];
+        const dup=P.deductions.some(x=>!String(x.src||"").startsWith("sb_")&&Math.abs(num(x.amount)-amt)<=Math.max(1,amt*0.02)&&words.some(w=>String(x.label||"").toLowerCase().includes(w)&&!/invoice|receipt|bill|jpeg|jpg|png|pdf/.test(w)));
+        if(dup) return; }
       const pct=num(pk==="deepu"?b.pctDeepu:b.pctBhavana);
       const label=b.kind==="depr"
         ? b.label+" (decline in value share, "+pct+"% of "+money(b.annual)+" annual decline)"
@@ -2359,7 +2371,7 @@ function strategyList(){  const items=[]; const m=mlsCalc();
 function sharedBillsCard(){
   const bills=S.sharedBills||[];
   const fD=onFixedRate("deepu"), fB=onFixedRate("bhavana");
-  const counted=(b,fixed)=>!(fixed&&b.kind!=="depr");
+  const counted=(b,fixed)=>!(fixed&&billInFixedRate(b));
   const status=pk=>{
     const fixed=pk==="deepu"?fD:fB; const P=S.people[pk];
     const hrs=num(S.interview.answers[pk+"_wfh"]); const fixedEst=Math.round(hrs*FY.wfhFixedRate);
