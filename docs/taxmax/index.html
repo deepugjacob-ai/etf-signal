@@ -1257,6 +1257,7 @@ const FV_EXTRA_RULES=[
 function fvNear(a,b){ a=Math.abs(num(a)); b=Math.abs(num(b)); return Math.abs(a-b)<=Math.max(1, b*0.15); }
 function fvRuleLine(rule){
   if(!rule||!rule.lineId) return null;
+  if(rule.target==="shared") return (S.sharedBills||[]).find(b=>b.id===rule.lineId)||null;
   if(rule.target==="person") return ((S.people[rule.pk]||{}).deductions||[]).find(d=>d.id===rule.lineId)||null;
   const b=S.business[rule.target]; return b?((b.expenses||[]).find(e=>e.id===rule.lineId)||null):null;
 }
@@ -1264,6 +1265,8 @@ function fvRuleLabel(rule){ return rule.base+" (bank feed"+(rule.n>1?", "+rule.n
 function fvAbsorb(rule, x){
   const line=fvRuleLine(rule); if(!line) return false;
   const amt=Math.abs(num(x.amount));
+  if(rule.target==="shared"){ line.annual=r2n(num(line.annual)+amt); rule.n=(rule.n||1)+1; rule.last=amt;
+    line.fvNote=(line.fvNote||"")+" "+(x.date||"")+" "+money(amt,2)+";"; syncSharedBills(); return true; }
   line.amount=r2n(num(line.amount)+Math.round(amt*rule.pct)/100);
   rule.n=(rule.n||1)+1; rule.last=amt; line.label=fvRuleLabel(rule);
   line.notes=(line.notes||"")+" Plus "+(x.date||"")+" "+money(amt,2)+".";
@@ -1294,7 +1297,7 @@ function scanFinVault(){
     const m=merchantKey(x.desc);
     const rule=m&&ruleFor[m];
     if(rule&&fvNear(f.amount,rule.last)&&fvAbsorb(rule,f)){
-      f.status="added automatically to "+(rule.target==="person"?pname(rule.pk):bizName(rule.target))+(rule.pct<100?" at "+rule.pct+"%":""); f.auto=true;
+      f.status="added automatically to "+(rule.target==="person"?pname(rule.pk):rule.target==="shared"?"the shared bill":bizName(rule.target))+(rule.pct<100&&rule.target!=="shared"?" at "+rule.pct+"%":""); f.auto=true;
       S.finvault.flags.push(f); existing.add(k); added++; return;
     }
     if(m&&(noFor[m]||[]).some(a=>fvNear(f.amount,a))){ f.status="not a claim"; f.auto=true; S.finvault.flags.push(f); existing.add(k); added++; return; }
@@ -2333,9 +2336,9 @@ function sharedBillsCard(){
   return '<div class="card" style="margin-top:14px"><h3>Shared household bills & assets <span class="tag">both claim</span></h3>'+
   '<div class="note" style="margin-bottom:10px">One bill or asset, two claimants: enter it once and each person\u2019s OWN work-use percentage. Running-cost bills (internet, energy, phone) are claimed under the actual cost method, so anyone on the 70c fixed rate is excluded from those, the rate already includes them. Depreciating ASSETS are different: the fixed rate does NOT cover decline in value, so both of you claim your asset shares no matter which method you use. Percentages are independent but together must stay believable.</div>'+
   status("deepu")+status("bhavana")+
-  '<table style="margin-top:10px"><tr><th>Bill / asset</th><th>Annual $ '+
+  '<table class="fvlist" style="margin-top:10px"><tr><th>Bill / asset</th><th>Annual $ '+
   '<span class="hint">(bill total, or annual decline for assets)</span></th><th>'+esc(pname("deepu"))+' work %</th><th>'+esc(pname("bhavana"))+' work %</th><th>'+esc(pname("deepu"))+' claims</th><th>'+esc(pname("bhavana"))+' claims</th><th>Evidence</th><th></th></tr>'+
-  bills.map((b,i)=>'<tr><td><input value="'+esc(b.label)+'" data-sbl="'+i+'" style="width:100%">'+(b.kind==="depr"?'<span class="pill gold" style="font-size:10px">asset: decline in value</span>'+(b.meta?'<div class="hint">'+esc(b.meta)+'</div>':''):'')+'</td>'+
+  bills.map((b,i)=>'<tr><td><input value="'+esc(b.label)+'" data-sbl="'+i+'" style="width:100%">'+(b.fvNote?'<div class="hint">From your bank feed: '+(b.fvNote.match(/;/g)||[]).length+' charge(s) this year</div>':'')+(b.kind==="depr"?'<span class="pill gold" style="font-size:10px">asset: decline in value</span>'+(b.meta?'<div class="hint">'+esc(b.meta)+'</div>':''):'')+'</td>'+
     '<td><input type="number" step="any" value="'+(b.annual||"")+'" data-sba="'+i+'"></td>'+
     '<td><input type="number" step="any" value="'+(b.pctDeepu||"")+'" data-sbd="'+i+'"></td>'+
     '<td><input type="number" step="any" value="'+(b.pctBhavana||"")+'" data-sbb="'+i+'"></td>'+
@@ -2776,7 +2779,8 @@ VIEWS.ded=(m)=>{
     '</table><button class="btn sm ghost dadd" data-p="'+pk+'" style="margin-top:6px">+ manual deduction</button></div>';
   };
   m.innerHTML=head("Deductions ledger","Everything the Claim Finder and FinVault scan produced, plus manual lines. Link evidence from the Vault to clear substantiation flags. Business and rental expenses live in their own tabs.")+
-  '<div class="grid g2">'+table("deepu")+(hasSpouse()?table("bhavana"):"")+'</div>';
+  '<div class="grid g2">'+table("deepu")+(hasSpouse()?table("bhavana"):"")+'</div>'+(hasSpouse()?sharedBillsCard():"");
+  if(hasSpouse()) bindSharedBills(m);
   m.querySelectorAll(".dadd").forEach(b=>b.onclick=()=>{ S.people[b.dataset.p].deductions.push({id:uid(),cat:"D5",label:"",amount:0,evidence:[]}); save(); render(); });
   m.querySelectorAll("[data-dl]").forEach(el=>el.onchange=()=>{const [p,i]=el.dataset.dl.split(":"); S.people[p].deductions[i].label=el.value; save();});
   m.querySelectorAll("[data-dc]").forEach(el=>el.onchange=()=>{const [p,i]=el.dataset.dc.split(":"); S.people[p].deductions[i].cat=el.value; save();});
@@ -3571,7 +3575,7 @@ VIEWS.fin=(m)=>{
   (order.length?'<table class="fvlist" style="margin-top:8px"><tr><th>Date</th><th>Description</th><th class="num">$</th><th>Suggested</th><th>Why</th><th></th></tr>'+
   order.map(([f,i])=>'<tr'+(f.status!=="new"?' style="opacity:.5"':'')+'><td class="num">'+esc(f.date)+'</td><td>'+esc(f.desc)+(f.account?'<div class="hint">'+esc(f.account)+'</div>':'')+'</td><td class="num">'+money(f.amount,2)+'</td><td>'+esc(f.cat)+'</td><td class="hint">'+esc(f.why)+(f.conf==="ai"?' <span class="pill gold">AI</span>':'')+'</td>'+
   '<td style="white-space:nowrap">'+(f.status!=="new"?esc(f.status):(f.dashMissing?'<span class="hint">add it in DASH</span> <button class="btn sm dim fvno" data-i="'+i+'">Done</button>':
-    '<select data-fp="'+i+'" style="font-size:11px">'+peopleOptions()+'</select> <input type="number" data-fpct="'+i+'" value="'+(/D9|D10|D15|D4/.test(f.cat)?100:(/phone|internet|software|subscription|ai |security|vpn/i.test(f.why)?50:100))+'" style="width:58px" title="work-use %">% <button class="btn sm fvok" data-i="'+i+'">Accept</button> <button class="btn sm dim fvno" data-i="'+i+'">Not a claim</button>'))+'</td></tr>').join("")+'</table>'
+    '<select data-fp="'+i+'" style="font-size:11px">'+peopleOptions()+(hasSpouse()&&/^D/.test(f.cat)?'<option value="both"'+(/telstra|optus|vodafone|tpg|aussie broadband|belong|internet|nbn|origin|agl|energyaustralia|red energy|alinta|electric|gas/i.test(f.desc+" "+f.why)?" selected":"")+'>Both (shared)</option>':'')+'</select> <input type="number" data-fpct="'+i+'" value="'+(/D9|D10|D15|D4/.test(f.cat)?100:(/phone|internet|software|subscription|ai |security|vpn/i.test(f.why)?50:100))+'" style="width:58px" title="work-use %">% <button class="btn sm fvok" data-i="'+i+'">Accept</button> <button class="btn sm dim fvno" data-i="'+i+'">Not a claim</button>'))+'</td></tr>').join("")+'</table>'
    :'<div class="hint" style="margin-top:8px">'+(linked?"Nothing new to review. New bank transactions are checked whenever FinVault syncs.":"Link FinVault, or paste transactions below.")+'</div>')+'</div>'+
   '<details style="margin-top:12px"><summary>Paste transactions manually, AI deep scan, recurring bills</summary>'+
   '<div class="card" style="margin-top:8px"><textarea class="big" id="fvin" placeholder=\'Paste JSON array like [{"date":"2025-08-14","desc":"OFFICEWORKS 1234","amount":-189.00}] or CSV date,description,amount\'></textarea>'+
@@ -3676,6 +3680,25 @@ VIEWS.fin=(m)=>{
     const f=S.finvault.flags[b.dataset.i];
     const pk=m.querySelector('select[data-fp="'+b.dataset.i+'"]').value;
     const pctEl=m.querySelector('[data-fpct="'+b.dataset.i+'"]'); const pct=Math.max(0,Math.min(100,num(pctEl?pctEl.value:100)||100));
+    if(pk==="both"){
+      // One household bill, both claim their own share (the Shared household bills card in Deductions)
+      const mk=merchantKey(f.desc)||f.desc.toLowerCase();
+      S.sharedBills=S.sharedBills||[];
+      const nice=/electric|origin|agl|energyaustralia|red energy|alinta/i.test(f.desc)?"Electricity":/gas/i.test(f.desc)?"Gas":/mobile/i.test(f.desc)?"Mobile":/telstra|optus|vodafone|tpg|aussie broadband|belong|internet|nbn/i.test(f.desc)?"Home internet":f.desc;
+      let bill=S.sharedBills.find(b=>b.fvMk===mk&&b.kind!=="depr");
+      const half=Math.round(pct/2*10)/10;
+      if(!bill){ bill={id:uid(), label:nice+" ("+f.desc+")", annual:0, pctDeepu:half, pctBhavana:half, docs:[], fvMk:mk}; S.sharedBills.push(bill); }
+      bill.annual=r2n(num(bill.annual)+f.amount); bill.fvNote=(bill.fvNote||"")+" "+f.date+" "+money(f.amount,2)+";";
+      const rule={mk, pct, pk:"both", target:"shared", lineId:bill.id, base:bill.label, last:f.amount, n:1}; f.rule=rule;
+      f.status="shared bill -> both ("+half+"% each)";
+      let more=0;
+      S.finvault.flags.forEach(o=>{ if(o!==f&&o.status==="new"&&merchantKey(o.desc)===mk&&fvNear(o.amount,rule.last)&&fvAbsorb(rule,o)){ o.status="added automatically to the shared bill"; o.auto=true; more++; } });
+      syncSharedBills(); save(); render();
+      const fixed=["deepu","bhavana"].filter(onFixedRate).map(pname);
+      toast("Added to Shared household bills (Deductions tab), split "+half+"% each"+(more?", with "+more+" more charge"+(more===1?"":"s"):"")+". Adjust each person\u2019s % there."+
+        (fixed.length&&/internet|electric|gas|phone|mobile/i.test(nice)?" Note: "+fixed.join(" and ")+" "+(fixed.length===1?"uses":"use")+" the 70c fixed rate, which already covers this, so only someone on actual cost claims it.":""));
+      return;
+    }
     // Equipment over $300 cannot be claimed outright by an employee: it goes in the Asset Register
     // and is claimed over its effective life (or pooled). Ask what the item is, then add it there.
     if(f.cat==="D5"&&f.amount>300&&/equipment/i.test(f.why||"")){
