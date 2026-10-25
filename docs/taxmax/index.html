@@ -434,6 +434,7 @@ function switchFY(label){
   S.meta.activeFY=label;
   setActiveFYRates(label);
   syncAssetLines(); save({meta:true}); syncNames(); syncSharedBills();
+  try{ applyLinks(); }catch(e){}
 }
 const $=q=>document.querySelector(q), $$=q=>Array.from(document.querySelectorAll(q));
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -513,6 +514,7 @@ function personDeductionTotal(pk, cat){
 }
 function uberVehicleDeduction(){
   const u=S.business.uber;
+  if(u.dashLinked&&typeof dashFY==="function"&&dashFY()) return num(dashFY().car.chosen); // DASH picks the larger legal method
   if(u.method==="cpk") return Math.min(num(u.km),FY.cpkCap)*FY.centsPerKm;
   return num(u.carActualTotal)*num(u.logbookPct)/100;
 }
@@ -978,6 +980,7 @@ async function applyRemote(payload, docsGist){
     S.cfg.assetTombstones=Array.from(tomb).slice(-500);
     if(payload.cfg && (joining || (payload.cfgUpdatedAt||"")>(S.cfg.updatedAt||""))){ const t=S.cfg.assetTombstones; S.cfg=Object.assign({}, payload.cfg, {assetTombstones:t}); }
     if(payload.ai){ ["geminiKey","geminiModel","mode","provider","autoRead"].forEach(k=>{ if(payload.ai[k]!==undefined&&payload.ai[k]!=="") S.ai[k]=payload.ai[k]; }); }
+    if(payload.links&&payload.links.fvPass&&!linksCfg().fvPass) linksCfg().fvPass=payload.links.fvPass;
     // documents: download only buckets holding ids this device lacks
     let got=0;
     if(docsGist && payload.docBuckets){
@@ -1067,7 +1070,7 @@ async function syncPush(opts){
     const now=new Date().toISOString();
     const payload={ app:"TaxMax Command", version:3, pushedAt:now, workspaces:allWorkspaces(), assets:S.assets||[], cfg:S.cfg, cfgUpdatedAt:S.cfg.updatedAt||"",
       ai:{ mode:S.ai.mode, geminiKey:S.ai.geminiKey, geminiModel:S.ai.geminiModel, autoRead:S.ai.autoRead },
-      docBuckets:sigs, docsGistId:g.docsGistId };
+      docBuckets:sigs, docsGistId:g.docsGistId, links:{ fvPass:linksCfg().fvPass||"" } };
     const content=JSON.stringify(await encryptPayload(payload, g.passphrase));
     const files={"taxmax_state.enc.json":{content}};
     let res;
@@ -1100,6 +1103,162 @@ function autoPullOnOpen(){
 // kept for the existing buttons
 async function gistPush(){ return syncPush({}); }
 async function gistPull(){ return syncPull({force:true}); }
+
+/* ===== Linked apps: DASH (rideshare) and FinVault (bank feed) =====
+   DASH publishes an encrypted feed (opt-in, "Send to TaxMax" in DASH) to a private gist,
+   encrypted with THIS app's sync passphrase. FinVault already keeps an encrypted household
+   sync gist; TaxMax reads it with your FinVault passphrase. Both are read-only from here:
+   nothing in DASH or FinVault is ever changed by TaxMax. */
+const DASH_FEED_DESC="TaxMax feed: DASH (encrypted, do not edit)";
+const DASH_RCPT_DESC="TaxMax feed: DASH receipts (encrypted, do not edit)";
+const FV_SYNC_DESC="FinVault household sync (encrypted)";
+const LINKS_CACHE_KEY="taxmax_links_cache";
+var LINKS={ dash:null, dashVersion:"", fvTxns:null, fvVersion:"", fvAt:"", status:{}, busy:false, lastAt:0 };
+try{ const c=JSON.parse(localStorage.getItem(LINKS_CACHE_KEY)||"null"); if(c){ LINKS.dash=c.dash||null; LINKS.dashVersion=c.dashVersion||""; } }catch(e){}
+function linksCfg(){ S.sync=S.sync||{}; S.sync.links=Object.assign({dash:true, fv:true, fvPass:"", fvGist:"", dashGist:""}, S.sync.links||{}); return S.sync.links; }
+function r2n(n){ return Math.round((Number(n)||0)*100)/100; }
+async function fvDecrypt(pass, enc){
+  const km=await crypto.subtle.importKey("raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveKey"]);
+  const key=await crypto.subtle.deriveKey({name:"PBKDF2", salt:b64ToBytes(enc.s), iterations:150000, hash:"SHA-256"}, km, {name:"AES-GCM", length:256}, false, ["decrypt"]);
+  let bytes=new Uint8Array(await crypto.subtle.decrypt({name:"AES-GCM", iv:b64ToBytes(enc.i)}, key, b64ToBytes(enc.c)));
+  if(enc.gz) bytes=new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+function gistVersion(g){ return (g.history&&g.history[0]&&g.history[0].version)||g.updated_at||""; }
+/* DASH figures for the active FY (DASH keys years by the 30 June year) */
+function dashFY(){ const p=LINKS.dash; if(!p||!p.years||linksCfg().dash===false) return null; return p.years[FY.end.slice(0,4)]||null; }
+function dashActive(){ return !!dashFY() && bizOn("uber") && isRideshare("uber"); }
+async function refreshLinks(opts){
+  opts=opts||{};
+  if(!S.sync||!S.sync.token||LINKS.busy) return;
+  LINKS.busy=true; LINKS.lastAt=Date.now();
+  const L=linksCfg(); let list=null;
+  const getList=async()=>list||(list=await gh("/gists?per_page=100"));
+  try{
+    if(L.dash!==false){
+      try{
+        let id=L.dashGist; if(!id){ const g=(await getList()).find(x=>x.description===DASH_FEED_DESC); id=g?g.id:""; }
+        if(!id){ LINKS.status.dash="Not linked yet. In DASH: Settings, Send to TaxMax, enter the same GitHub token and THIS app's sync passphrase."; }
+        else{
+          const g=await gh("/gists/"+id); const ver=gistVersion(g);
+          if(opts.force||ver!==LINKS.dashVersion||!LINKS.dash){
+            const f=g.files["dash_feed.enc.json"];
+            if(f){ LINKS.dash=await decryptPayload(JSON.parse(await fileText(f)), S.sync.passphrase); LINKS.dashVersion=ver;
+              try{ localStorage.setItem(LINKS_CACHE_KEY, JSON.stringify({dash:LINKS.dash, dashVersion:ver})); }catch(e){} }
+          }
+          LINKS.status.dash="Linked. DASH data from "+String((LINKS.dash&&LINKS.dash.generatedAt)||"").slice(0,16).replace("T"," ");
+        }
+      }catch(e){ LINKS.status.dash=(/decrypt|OperationError/i.test(e.message+e.name)?"DASH feed can't be decrypted: in DASH, use the same passphrase as TaxMax sync":"DASH link failed: "+e.message); }
+    }
+    if(L.fv!==false){
+      if(!L.fvPass){ LINKS.status.fv="Enter your FinVault sync passphrase below to link it."; }
+      else try{
+        let id=L.fvGist; if(!id){ const g=(await getList()).find(x=>x.description===FV_SYNC_DESC); id=g?g.id:""; }
+        if(!id){ LINKS.status.fv="No FinVault sync space found for this GitHub token. If FinVault uses a different GitHub account, paste its Gist ID below."; }
+        else{
+          const g=await gh("/gists/"+id); const ver=gistVersion(g);
+          if(opts.force||ver!==LINKS.fvVersion||!LINKS.fvTxns){
+            const f=g.files["finvault.sync.json"]; if(!f) throw new Error("that gist has no FinVault sync file");
+            const outer=JSON.parse(await fileText(f));
+            if(outer.enc){ const data=await fvDecrypt(L.fvPass, outer.enc); LINKS.fvTxns=Array.isArray(data.txns)?data.txns:[]; LINKS.fvVersion=ver; LINKS.fvAt=outer.at||""; }
+          }
+          LINKS.status.fv="Linked. "+(LINKS.fvTxns||[]).length+" transactions in FinVault"+(LINKS.fvAt?", synced "+String(LINKS.fvAt).slice(0,16).replace("T"," "):"");
+        }
+      }catch(e){ LINKS.status.fv=(e.name==="OperationError"?"Wrong FinVault passphrase":"FinVault link failed: "+e.message); }
+    }
+    const changed=applyLinks();
+    if(dashActive()) await importDashReceipts();
+    if(changed||opts.render) render();
+  } finally { LINKS.busy=false; }
+}
+/* Put linked data into the active FY workspace. Returns true if anything changed. */
+function applyLinks(){
+  let changed=false;
+  try{ changed=applyDashToFY()||changed; }catch(e){ console.error(e); }
+  try{ changed=scanFinVault()||changed; }catch(e){ console.error(e); }
+  if(changed) save();
+  return changed;
+}
+function applyDashToFY(){
+  const U=S.business.uber; const d=dashActive()?dashFY():null;
+  const before=JSON.stringify([U.income,U.km,U.method,U.logbookPct,U.carActualTotal,U.dashLinked,(U.expenses||[]).filter(e=>String(e.src||"").startsWith("dash_")).map(e=>[e.src,e.amount,(e.evidence||[]).length])]);
+  const keepEv={}; (U.expenses||[]).forEach(e=>{ if(String(e.src||"").startsWith("dash_")) keepEv[e.src]=e.evidence||[]; });
+  U.expenses=(U.expenses||[]).filter(e=>!String(e.src||"").startsWith("dash_"));
+  if(!d){ if(U.dashLinked){ U.dashLinked=false; } }
+  else{
+    U.dashLinked=true;
+    U.income=r2n(d.income.total); U.incomeIsGstExcl=true; U.km=Math.round(num(d.car.km));
+    U.method=d.car.method==="cents"?"cpk":"logbook"; U.logbookPct=r2n(d.car.bizPct);
+    U.carActualTotal=d.car.bizPct>0?r2n(d.car.logbook*100/d.car.bizPct):0;
+    if(d.gstReg) S.business.gstRegistered=true;
+    const rc=(S.meta.dashRcptDocs||{});
+    Object.keys(d.other.byCat||{}).forEach(c=>{ const v=num(d.other.byCat[c]); if(v<=0) return;
+      const ev=(d.expenses||[]).filter(e=>e.cat===c).flatMap(e=>e.receipts||[]).map(pid=>rc[pid]).filter(Boolean);
+      U.expenses.push({id:"dash_"+c, src:"dash_"+c, label:((d.catNames||{})[c]||c)+" (from DASH)", amount:r2n(v), evidence:ev.length?ev:(keepEv["dash_"+c]||[])}); });
+  }
+  const after=JSON.stringify([U.income,U.km,U.method,U.logbookPct,U.carActualTotal,U.dashLinked,(U.expenses||[]).filter(e=>String(e.src||"").startsWith("dash_")).map(e=>[e.src,e.amount,(e.evidence||[]).length])]);
+  return before!==after;
+}
+/* Copy DASH receipt images for this FY into the Evidence Vault (once each). */
+async function importDashReceipts(){
+  const p=LINKS.dash, d=dashFY(); if(!p||!d||!p.rcptGistId) return;
+  const want={}; (d.expenses||[]).forEach(e=>(e.receipts||[]).forEach(pid=>{ want[pid]=e; }));
+  const have=S.meta.dashRcptDocs=S.meta.dashRcptDocs||{};
+  const missing=Object.keys(want).filter(pid=>!have[pid]); if(!missing.length) return;
+  const buckets={}; missing.forEach(pid=>{ const b=(p.rcptIndex||{})[pid]; if(b) (buckets[b]=buckets[b]||[]).push(pid); });
+  if(!Object.keys(buckets).length) return;
+  try{
+    const g=await gh("/gists/"+p.rcptGistId); let added=0;
+    for(const b of Object.keys(buckets)){
+      const f=g.files["rcpt_"+b+".enc.json"]; if(!f) continue;
+      const pack=await decryptPayload(JSON.parse(await fileText(f)), S.sync.passphrase);
+      for(const r of (pack.files||[])){
+        if(buckets[b].indexOf(r.id)<0||have[r.id]) continue;
+        const e=want[r.id]; const mime=r.mime||"image/jpeg"; const docId="dash-"+r.id;
+        const ext=mime==="application/pdf"?"pdf":(mime.indexOf("image/")===0?"jpg":"bin");
+        const name="DASH "+((d.catNames||{})[e.cat]||e.cat)+" "+e.date+"."+ext;
+        await idbPut({id:docId, name, type:mime, blob:b64ToBlob(r.data, mime)});
+        if(!S.docs.some(x=>x.id===docId)) S.docs.push({id:docId, name, type:mime, size:Math.round(r.data.length*0.75), added:new Date().toISOString().slice(0,10), source:"DASH",
+          summary:"DASH receipt: "+((d.catNames||{})[e.cat]||e.cat)+" "+e.date+" "+money(e.amount,2)+(e.note?" ("+String(e.note).slice(0,60)+")":""),
+          claimed:{target:"uber", msg:"via DASH ("+((d.catNames||{})[e.cat]||e.cat)+")", when:e.date}});
+        have[r.id]=docId; added++;
+      }
+    }
+    if(added){ applyDashToFY(); save(); toast(added+" DASH receipt"+(added===1?"":"s")+" added to the Evidence Vault"); }
+  }catch(e){ console.warn("DASH receipts:", e.message); }
+}
+/* Extra merchant rules for things the bank feed shows that are often work-related */
+const FV_EXTRA_RULES=[
+ {re:/anthropic|claude\.ai|openai|chatgpt|perplexity|github copilot/i, cat:"D5", why:"AI / software subscription (claim the work-use % only)"},
+ {re:/nordvpn|nord account|expressvpn|1password|lastpass|bitwarden/i, cat:"D5", why:"Security software (work-use % only, keep a usage note)"},
+ {re:/ugreen|anker|belkin|logitech|dell|lenovo|asus|samsung.*monitor/i, cat:"D5", why:"Possible work equipment (over $300 goes in the Asset Register)"},
+ {re:/engineers australia|aipm|pmi\b|acs\b|cpa australia|ca anz|ahpra/i, cat:"D5", why:"Professional membership"}
+];
+/* Scan FinVault transactions for the active FY and add review items to the inbox. */
+function scanFinVault(){
+  if(!LINKS.fvTxns||linksCfg().fv===false) return false;
+  const tx=LINKS.fvTxns.map(t=>({date:String(t.date||"").slice(0,10), desc:String(t.description||""), amount:num(t.amount), fvCat:t.category||"", account:t.account||""}));
+  S.finvault.txns=tx; S.finvault.linkedAt=LINKS.fvAt||"";
+  const inRange=tx.filter(inFY);
+  const keyOf=f=>(f.date||"")+"|"+f.desc+"|"+num(f.amount).toFixed(2);
+  const existing=new Set(S.finvault.flags.map(keyOf)), oldKeys=new Set(S.finvault.flags.map(f=>f.desc+"|"+f.amount));
+  const d=dashActive()?dashFY():null;
+  const inDash=(x)=>d&&(d.expenses||[]).some(e=>Math.abs(num(e.amount)-Math.abs(x.amount))<=Math.max(0.5,Math.abs(x.amount)*0.01)&&Math.abs((new Date(e.date)-new Date(x.date))/86400000)<=3);
+  let added=0;
+  inRange.forEach((x,i)=>{
+    if(x.amount>=0||x.fvCat==="Transfer") return;
+    let hit=null;
+    for(const r of FV_EXTRA_RULES){ if(r.re.test(x.desc)){ hit=r; break; } }
+    if(!hit){ for(const r of FV_RULES){ if(r.re.test(x.desc)){ hit=r; break; } } }
+    if(!hit) return;
+    const f={date:x.date, desc:x.desc, amount:Math.abs(x.amount), cat:hit.cat, why:hit.why, status:"new", conf:"rule", src:"finvault", account:x.account};
+    const k=keyOf(f); if(existing.has(k)||oldKeys.has(f.desc+"|"+f.amount)) return;
+    if(alreadyClaimed({desc:x.desc, amount:x.amount, date:x.date})) return;
+    if(f.cat==="BIZ_UBER"&&d){ if(inDash(x)) return; f.why="Car / Uber cost that is NOT in DASH. Add it in DASH so it is claimed once, with the logbook %."; f.dashMissing=true; }
+    S.finvault.flags.push(f); existing.add(k); added++;
+  });
+  return added>0;
+}
 
 async function makeBackup(includeFiles){
   // Backups are plain files: never put the GitHub token, sync passphrase or AI key in them.
@@ -1698,6 +1857,26 @@ function runAudit(){
     if(c.overCap>0) push("amber","cap_"+pk,pname(pk)+": concessional super contributions of "+money(c.concessional+c.overCap)+" exceed the "+money(FY.concessionalCap)+" cap",
       "Estimated concessional contributions (12% employer SG + salary sacrifice + personal deductible super) are about "+money(c.overCap)+" over the cap. Excess concessional contributions are added to your assessable income and taxed at your marginal rate (with a 15% offset), plus an interest charge. If your total super balance was under $500,000 at 30 June 2025 you may have unused carry-forward cap from prior years that raises your personal cap, check myGov before assuming an excess.");
   });
+  // Linked apps (DASH + FinVault)
+  { const dd=dashActive()?dashFY():null;
+    if(dd){
+      ((dd.checks&&dd.checks.errors)||[]).slice(0,6).forEach((e,i)=>push("red","dashe_"+i,"DASH: "+String(e).slice(0,80)+(String(e).length>80?"...":""),String(e)+" Fix it in DASH; the figures here update by themselves."));
+      ((dd.checks&&dd.checks.warns)||[]).slice(0,4).forEach((e,i)=>push("amber","dashw_"+i,"DASH: "+String(e).slice(0,80)+(String(e).length>80?"...":""),String(e)));
+      const pi=num((dd.other.byCat||{}).phone)+num((dd.other.byCat||{}).internet);
+      const empPI=S.people.deepu.deductions.filter(x=>/phone|internet|mobile|nbn|broadband/i.test((x.label||"")+" "+(x.notes||""))&&!/decline/i.test(x.label||"")).reduce((a,x)=>a+num(x.amount),0)
+        +(S.sharedBills||[]).filter(b=>/phone|internet|mobile|nbn|broadband/i.test(b.label||"")&&b.kind!=="depr").reduce((a,b)=>a+billClaim(b,"deepu"),0);
+      if(pi>0&&(empPI>0||onFixedRate("deepu"))) push("amber","dashpi","Phone/internet claimed in DASH and as an employee",
+        "DASH claims "+money(pi)+" of phone and internet for Uber, and your employee claims "+(onFixedRate("deepu")?"use the 70c fixed rate, which already includes phone and internet for your working-from-home hours":"also include "+money(empPI)+" of phone or internet")+". Both are allowed only if they cover different slices of use: Uber % + employment % + private % must come to 100% of each bill, based on one usage diary. Check the % in DASH (Settings) and here.");
+    }
+    const missing=S.finvault.flags.filter(f=>f.dashMissing&&f.status==="new");
+    if(missing.length) push("teal","fvdash",missing.length+" car or Uber cost"+(missing.length===1?"":"s")+" in your bank feed "+(missing.length===1?"is":"are")+" not in DASH",
+      "Total "+money(missing.reduce((a,f)=>a+num(f.amount),0),2)+". If they relate to the Uber car, add them in DASH so the logbook % is applied once. They are listed in the Tax inbox.");
+    const inbox=S.finvault.flags.filter(f=>f.status==="new"&&!f.dashMissing).length;
+    if(inbox) push("teal","fvinbox",inbox+" bank transaction"+(inbox===1?"":"s")+" might be claimable","Review them in the Tax inbox: accept with the right work-use %, or mark them as not a claim.");
+    activePeople().forEach(pk=>{ const need=S.people[pk].deductions.filter(x=>x.needsReceipt&&!(x.evidence||[]).length&&num(x.amount)>0);
+      if(need.length) push("amber","rcpt_"+pk,pname(pk)+": "+need.length+" claim"+(need.length===1?"":"s")+" from the bank feed need a receipt",
+        "A bank statement shows you paid, not what you bought. Upload the receipt or tax invoice for: "+need.slice(0,5).map(x=>x.label.split(" (")[0]+" "+money(x.amount,2)).join(", ")+(need.length>5?" and "+(need.length-5)+" more":"")+". Link it in the Deductions tab."); });
+  }
   // Asset register checks
   (S.assets||[]).forEach(a=>{
     assetMissedYears(a).forEach(x=>{
@@ -1756,7 +1935,7 @@ function classifyLocal(txns){
 const TABS=[
  ["dash","DB","Dashboard"],["interview","IQ","Claim Finder"],["income","IN","Income"],
  ["biz","BZ","Business ABN"],["prop","PR","Property & CGT"],["ded","D#","Deductions"],["assets","AR","Asset Register"],
- ["vault","EV","Evidence Vault"],["prior","PY","Prior Returns"],["fin","FV","FinVault Scan"],["lodge","MT","myTax Handoff"],
+ ["vault","EV","Evidence Vault"],["prior","PY","Prior Returns"],["fin","TI","Tax Inbox"],["lodge","MT","myTax Handoff"],
  ["audit","AS","Audit Shield"],["data","IO","Data & AI"],["settings","SET","Settings"]
 ];
 let TAB="dash";
@@ -2221,6 +2400,23 @@ VIEWS.biz=(m)=>{
   const expRows=(list,which)=>list.map((e,i)=>'<tr><td><input value="'+esc(e.label)+'" data-exl="'+which+':'+i+'" style="width:100%"></td><td class="num"><input type="number" step="any" value="'+e.amount+'" data-exa="'+which+':'+i+'" style="width:110px"></td><td><button class="btn sm dim exdel" data-x="'+which+':'+i+'">x</button></td></tr>').join("");
   const rideCard=(bk)=>{
     const b=S.business[bk];
+    const dd=(bk==="uber"&&b.dashLinked)?dashFY():null;
+    if(dd){
+      const cat=(o)=>Object.keys(o||{}).filter(k=>num(o[k])>0).sort((x,y)=>o[y]-o[x]).map(k=>'<tr><td>'+esc((dd.catNames||{})[k]||k)+'</td><td class="num">'+money(o[k],2)+'</td></tr>').join("");
+      return '<div class="card"><h3>'+esc(bizName(bk))+' <span class="tag">from DASH</span></h3>'+
+      '<div class="note" style="margin-bottom:8px">These figures come straight from DASH for FY'+esc(FY.label)+' and update whenever DASH sends. Edit trips, income and costs in DASH, not here, so nothing is entered twice.</div>'+
+      '<div class="kv"><span>Income (GST-exclusive)</span><b class="money">'+money(dd.income.total,2)+'</b>'+
+      '<span>Car method</span><b>'+(dd.car.method==="cents"?"Cents per km: "+Math.round(num(dd.car.cappedKm)).toLocaleString()+" km x "+Math.round(num(dd.car.rate)*100)+"c":"Logbook "+r2n(dd.car.bizPct)+"% of actual costs")+'</b>'+
+      '<span>Car deduction</span><b class="money">'+money(dd.car.chosen,2)+'</b>'+
+      '<span>Other method would give</span><b class="money">'+money(dd.car.method==="cents"?dd.car.logbook:dd.car.cents,2)+'</b>'+
+      '<span>Business km (FY)</span><b>'+Math.round(num(dd.car.km)).toLocaleString()+'</b>'+
+      '<span>Other business costs</span><b class="money">'+money(dd.other.total,2)+'</b>'+
+      '<span>Net result</span><b class="money '+(bizNet(bk)>=0?"pos":"neg")+'">'+money(bizNet(bk))+'</b></div>'+
+      (dd.car.method!=="cents"&&Object.keys(dd.car.byCat||{}).length?'<details style="margin-top:8px"><summary>Car costs at '+r2n(dd.car.bizPct)+'% business use</summary><table>'+cat(dd.car.byCat)+'</table></details>':'')+
+      (Object.keys(dd.other.byCat||{}).length?'<details><summary>Other costs</summary><table>'+cat(dd.other.byCat)+'</table></details>':'')+
+      ((dd.checks&&dd.checks.errors&&dd.checks.errors.length)?'<div class="alert red" style="margin-top:8px"><span class="sev">DASH</span> '+dd.checks.errors.length+' issue(s) to fix in DASH before lodging. See Audit Shield.</div>':'')+
+      '<div class="hint" style="margin-top:6px">Receipts attached in DASH are copied into the Evidence Vault ('+Object.keys(S.meta.dashRcptDocs||{}).length+' so far).</div></div>';
+    }
     return '<div class="card"><h3>'+esc(bizName(bk))+' <span class="tag">rideshare</span></h3><div class="two">'+
     inp("Income (net fares, GST-exclusive, from annual tax summary)","business."+bk+".income","number","","e.g. 8000 (net fares, GST removed)")+
     inp("Business km driven for rideshare","business."+bk+".km","number","","e.g. 4200 (only work km, capped at 5,000 on cents/km)")+
@@ -3169,15 +3365,31 @@ function clearLoadedTxns(){
   S.finvault.txns=[]; save(); render(); toast("Transactions cleared. Storage freed.");
 }
 VIEWS.fin=(m)=>{
-  m.innerHTML=head("FinVault expense scan","Paste a JSON/CSV of transactions (date, description, amount). Only transactions dated within FY"+FY.label+" ("+FY.start+" to "+FY.end+") are scanned; anything outside is ignored automatically. Transactions you have already turned into a deduction, business expense or shared bill are skipped so nothing is flagged twice. Accept a flag to create the line.")+
-  '<div class="card"><textarea class="big" id="fvin" placeholder=\'Paste JSON array like [{"date":"2025-08-14","desc":"OFFICEWORKS 1234","amount":-189.00}] or CSV date,description,amount\'></textarea>'+
-  '<div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="btn ghost" id="fvprev">Preview parsed data</button><button class="btn" id="fvscan">Scan (rules)</button><button class="btn ghost" id="fvai">Deep scan with AI</button><button class="btn ghost" id="fvrec">Detect recurring bills</button>'+(S.finvault.txns.length?'<button class="btn dim" id="fvclear">Clear loaded transactions</button>':'')+'<span class="hint" id="fvst">'+(S.finvault.txns.length? S.finvault.txns.length+' transactions loaded, '+S.finvault.flags.length+' flags':'')+'</span></div>'+
-  '<div class="hint" id="fvStorage" style="margin-top:6px">'+storageLine()+'</div></div>'+
+  const L=linksCfg(); const linked=!!LINKS.fvTxns&&L.fv!==false; const d=dashActive()?dashFY():null;
+  const order=S.finvault.flags.map((f,i)=>[f,i]).filter(([f])=>S.fvShowAll||f.status==="new").sort((a,b)=>String(b[0].date).localeCompare(String(a[0].date)));
+  const newCount=S.finvault.flags.filter(f=>f.status==="new").length;
+  m.innerHTML=head("Tax inbox","Possible claims found in your bank transactions, waiting for a yes or no. Linked to FinVault, this fills itself: every transaction in FY"+FY.label+" is checked against tax rules, anything already claimed (here, in the Asset Register, or in DASH) is skipped, and each item you accept becomes a deduction line that asks for its receipt.")+
+  '<div class="grid g2" style="margin-bottom:12px">'+
+   '<div class="card"><h3>FinVault <span class="tag">'+(linked?"linked":"not linked")+'</span></h3><div class="hint">'+esc(LINKS.status.fv||(S.sync.token?"Checking...":"Set up sync in Data & AI first (GitHub token + passphrase), then add your FinVault passphrase there."))+'</div>'+
+    (linked?'<div class="hint" style="margin-top:4px">'+S.finvault.txns.filter(inFY).length+' transactions fall in FY'+esc(FY.label)+'.</div>':'')+'<div class="row" style="margin-top:8px"><button class="btn sm" id="lnkNow">Check now</button><button class="btn sm ghost nba" data-t="data">Link settings</button></div></div>'+
+   '<div class="card"><h3>DASH <span class="tag">'+(d?"linked":"not linked")+'</span></h3><div class="hint">'+esc(LINKS.status.dash||"Not checked yet")+'</div>'+
+    (d?'<div class="hint" style="margin-top:4px">FY'+esc(FY.label)+': income '+money(d.income.total)+', car '+money(d.car.chosen)+' ('+(d.car.method==="cents"?"cents per km":"logbook "+r2n(d.car.bizPct)+"%")+'), other costs '+money(d.other.total)+'. Shown in the Business tab.</div>':'')+'</div>'+
+  '</div>'+
+  '<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h3 style="margin:0">To review <span class="tag">'+newCount+' new</span></h3><label style="margin:0"><input type="checkbox" id="fvAll" '+(S.fvShowAll?"checked":"")+' style="width:auto"> show handled</label></div>'+
+  (order.length?'<table style="margin-top:8px"><tr><th>Date</th><th>Description</th><th class="num">$</th><th>Suggested</th><th>Why</th><th></th></tr>'+
+  order.map(([f,i])=>'<tr'+(f.status!=="new"?' style="opacity:.5"':'')+'><td class="num">'+esc(f.date)+'</td><td>'+esc(f.desc)+(f.account?'<div class="hint">'+esc(f.account)+'</div>':'')+'</td><td class="num">'+money(f.amount,2)+'</td><td>'+esc(f.cat)+'</td><td class="hint">'+esc(f.why)+(f.conf==="ai"?' <span class="pill gold">AI</span>':'')+'</td>'+
+  '<td style="white-space:nowrap">'+(f.status!=="new"?esc(f.status):(f.dashMissing?'<span class="hint">add it in DASH</span> <button class="btn sm dim fvno" data-i="'+i+'">Done</button>':
+    '<select data-fp="'+i+'" style="font-size:11px">'+peopleOptions()+'</select> <input type="number" data-fpct="'+i+'" value="'+(/D9|D10|D15|D4/.test(f.cat)?100:(/phone|internet|software|subscription|ai |security|vpn/i.test(f.why)?50:100))+'" style="width:58px" title="work-use %">% <button class="btn sm fvok" data-i="'+i+'">Accept</button> <button class="btn sm dim fvno" data-i="'+i+'">Not a claim</button>'))+'</td></tr>').join("")+'</table>'
+   :'<div class="hint" style="margin-top:8px">'+(linked?"Nothing new to review. New bank transactions are checked whenever FinVault syncs.":"Link FinVault, or paste transactions below.")+'</div>')+'</div>'+
+  '<details style="margin-top:12px"><summary>Paste transactions manually, AI deep scan, recurring bills</summary>'+
+  '<div class="card" style="margin-top:8px"><textarea class="big" id="fvin" placeholder=\'Paste JSON array like [{"date":"2025-08-14","desc":"OFFICEWORKS 1234","amount":-189.00}] or CSV date,description,amount\'></textarea>'+
+  '<div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="btn ghost" id="fvprev">Preview parsed data</button><button class="btn" id="fvscan">Scan (rules)</button><button class="btn ghost" id="fvai">Deep scan with AI</button><button class="btn ghost" id="fvrec">Detect recurring bills</button>'+(S.finvault.txns.length&&!linked?'<button class="btn dim" id="fvclear">Clear loaded transactions</button>':'')+'<span class="hint" id="fvst">'+(S.finvault.txns.length? S.finvault.txns.length+' transactions loaded'+(linked?' from FinVault':''):'')+'</span></div>'+
+  '<div class="hint" id="fvStorage" style="margin-top:6px">'+storageLine()+'</div></div></details>'+
   '<div id="fvPrevBox"></div>'+
-  '<div id="fvRecBox"></div>'+
-  '<div class="card" style="margin-top:12px"><h3>Flagged candidates</h3><table><tr><th>Date</th><th>Description</th><th class="num">$</th><th>Suggested</th><th>Why</th><th></th></tr>'+
-  S.finvault.flags.map((f,i)=>'<tr'+(f.status!=="new"?' style="opacity:.5"':'')+'><td class="num">'+esc(f.date)+'</td><td>'+esc(f.desc)+'</td><td class="num">'+money(f.amount,2)+'</td><td>'+esc(f.cat)+'</td><td class="hint">'+esc(f.why)+(f.conf==="ai"?' <span class="pill gold">AI</span>':'')+'</td>'+
-  '<td>'+(f.status==="new"?'<select data-fp="'+i+'" style="font-size:11px">'+peopleOptions()+'</select> <button class="btn sm fvok" data-i="'+i+'">Accept</button> <button class="btn sm dim fvno" data-i="'+i+'">Dismiss</button>':esc(f.status))+'</td></tr>').join("")+'</table></div>';
+  '<div id="fvRecBox"></div>';
+  if($("#lnkNow")) $("#lnkNow").onclick=async()=>{ $("#lnkNow").innerHTML='<span class="spin"></span>'; await refreshLinks({force:true, render:true}); render(); };
+  if($("#fvAll")) $("#fvAll").onchange=e=>{ S.fvShowAll=e.target.checked; render(); };
+  m.querySelectorAll(".nba").forEach(b=>b.onclick=()=>go(b.dataset.t));
   function parseIn(){
     const raw=$("#fvin").value.trim(); if(!raw) return S.finvault.txns;
     let txns=[];
@@ -3271,14 +3483,16 @@ VIEWS.fin=(m)=>{
   m.querySelectorAll(".fvok").forEach(b=>b.onclick=()=>{
     const f=S.finvault.flags[b.dataset.i];
     const pk=m.querySelector('select[data-fp="'+b.dataset.i+'"]').value;
-    if(f.cat==="BIZ_UBER"){ S.business.uber.expenses.push({id:uid(),label:f.desc,amount:f.amount}); }
-    else if(f.cat==="BIZ_MER"){ S.business.meridian.expenses.push({id:uid(),label:f.desc,amount:f.amount}); }
-    else if(f.cat==="RENT"){ S.property.rental.other=num(S.property.rental.other)+f.amount; }
-    else { S.people[pk].deductions.push({id:uid(),cat:f.cat.startsWith("D")?f.cat:"D5",label:f.desc+" ("+f.why.slice(0,40)+")",amount:f.amount,evidence:[]}); }
-    f.status="accepted -> "+(f.cat==="RENT"?"rental":f.cat.startsWith("BIZ")?"business":pk);
+    const pctEl=m.querySelector('[data-fpct="'+b.dataset.i+'"]'); const pct=Math.max(0,Math.min(100,num(pctEl?pctEl.value:100)||100));
+    const amt=Math.round(f.amount*pct)/100; const note="From bank feed "+(f.date||"")+": "+f.desc+(pct<100?" at "+pct+"% work use":"")+". Attach the receipt or invoice.";
+    if(f.cat==="BIZ_UBER"){ S.business.uber.expenses.push({id:uid(),label:f.desc+(pct<100?" ("+pct+"%)":""),amount:amt,notes:note}); }
+    else if(f.cat==="BIZ_MER"){ S.business.meridian.expenses.push({id:uid(),label:f.desc+(pct<100?" ("+pct+"%)":""),amount:amt,notes:note}); }
+    else if(f.cat==="RENT"){ S.property.rental.other=num(S.property.rental.other)+amt; }
+    else { S.people[pk].deductions.push({id:uid(),src:"fv",cat:f.cat.startsWith("D")?f.cat:"D5",label:f.desc+" ("+f.why.slice(0,40)+")",amount:amt,evidence:[],notes:note,needsReceipt:true}); }
+    f.status="accepted"+(pct<100?" at "+pct+"%":"")+" -> "+(f.cat==="RENT"?"rental":f.cat.startsWith("BIZ")?"business":pname(pk));
     save(); render(); toast("Added. Now link its receipt in the Vault.");
   });
-  m.querySelectorAll(".fvno").forEach(b=>b.onclick=()=>{ S.finvault.flags[b.dataset.i].status="dismissed"; save(); render(); });
+  m.querySelectorAll(".fvno").forEach(b=>b.onclick=()=>{ const f=S.finvault.flags[b.dataset.i]; f.status=f.dashMissing?"handled in DASH":"not a claim"; save(); render(); });
 
   if($("#fvclear")) $("#fvclear").onclick=clearLoadedTxns;
   $("#fvrec").onclick=()=>{
@@ -3393,6 +3607,10 @@ function flagTab(id){
   if(/^gst|^ncl_|^psi|^cpk/.test(id)) return "biz";
   if(/^cg|^smsf|^rent/.test(id)) return "prop";
   if(/^dd_|^noi_|^reimb_|^selfed_|^dgr_|^wre_|^round_|^dc_|^frank_/.test(id)) return "interview";
+  if(/^fvinbox|^fvdash/.test(id)) return "fin";
+  if(/^dashe_|^dashw_|^dashpi/.test(id)) return "biz";
+  if(/^rcpt_/.test(id)) return "ded";
+  if(/^amiss_|^aunk_|^anodoc_/.test(id)) return "assets";
   if(/^sb\d|^sb100_/.test(id)) return "interview";
   if(/^prefill|^payg|^scope/.test(id)) return "lodge";
   return "audit";
@@ -3479,6 +3697,18 @@ VIEWS.data=(m)=>{
   '<div class="hint" style="margin-top:4px">'+(S.sync.lastPush?"Last push: "+esc(S.sync.lastPush.slice(0,16).replace("T"," ")):"Not pushed yet")+(S.sync.lastPull?" &middot; Last pull: "+esc(S.sync.lastPull.slice(0,16).replace("T"," ")):"")+'</div>'+
   '<details style="margin-top:6px"><summary>Advanced: gist IDs</summary><div class="two" style="margin-top:6px"><div><label class="lbl">State gist ID</label><input id="syncGist" value="'+esc(S.sync.gistId||"")+'" placeholder="found automatically"></div><div><label class="lbl">Documents gist ID</label><input id="syncDocsGist" value="'+esc(S.sync.docsGistId||"")+'" placeholder="found automatically"></div></div></details>'+
   '<div class="note" style="border-color:var(--gold);margin-top:8px">If both devices change the same financial year before syncing, the most recently edited copy of that year wins (asset register entries merge one by one). Documents larger than a few MB in total per bundle stay on the device that has them: the full backup file still carries everything.</div></div></div>'+
+  '<div class="card" style="margin-top:12px"><h3>Linked apps <span class="tag">read-only</span></h3>'+
+  '<div class="hint" style="margin-bottom:8px">TaxMax reads, never writes. Both links use the GitHub token above, and everything stays encrypted end to end.</div>'+
+  '<div class="two">'+
+   '<div><label><input type="checkbox" id="lnkDash" '+(linksCfg().dash!==false?"checked":"")+' style="width:auto"> <b>DASH</b> (rideshare income, logbook, car costs, receipts)</label>'+
+    '<div class="hint">'+esc(LINKS.status.dash||"Not checked yet")+'</div>'+
+    '<div class="hint" style="margin-top:4px">In DASH: Settings, Send to TaxMax. Use the same GitHub token and <b>this app\u2019s sync passphrase</b>.</div></div>'+
+   '<div><label><input type="checkbox" id="lnkFv" '+(linksCfg().fv!==false?"checked":"")+' style="width:auto"> <b>FinVault</b> (bank transactions)</label>'+
+    '<label class="lbl" style="margin-top:6px">FinVault sync passphrase</label><input id="lnkFvPass" type="password" value="'+esc(linksCfg().fvPass||"")+'" placeholder="the passphrase FinVault household sync uses">'+
+    '<details style="margin-top:4px"><summary>FinVault gist ID (only if it is on another GitHub account)</summary><input id="lnkFvGist" value="'+esc(linksCfg().fvGist||"")+'" placeholder="found automatically"></details>'+
+    '<div class="hint">'+esc(LINKS.status.fv||"Not checked yet")+'</div></div>'+
+  '</div>'+
+  '<div class="row" style="margin-top:10px"><button class="btn" id="lnkSave">Save and check links</button></div></div>'+
   '<div class="card" style="margin-top:12px"><h3>Rates for FY '+FY.label+(FY.ratesProvisional?' <span class="pill bad">provisional</span>':' <span class="pill ok">verified</span>')+'</h3>'+
   (FY.ratesProvisional?'<div class="note" style="border-color:var(--gold);margin-bottom:8px">This year\u2019s official rates are not set yet. The tool is using prior-year placeholders so you can capture invoices now; refund figures are not final until real FY '+FY.label+' rates are added.</div>':'')+'<table>'+
   [["Resident brackets",FY.brackets.map((b,i)=>Math.round(b[1]*100)+"%"+(b[0]===Infinity||b[0]==null?" above":" to $"+b[0].toLocaleString())).join("; ")],
@@ -3504,6 +3734,9 @@ VIEWS.data=(m)=>{
   if($("#syncSave")) $("#syncSave").onclick=()=>{ saveSync(); toast("Sync settings saved in this browser"); };
   if($("#syncPush")) $("#syncPush").onclick=async()=>{ saveSync(); await gistPush(); };
   if($("#syncPull")) $("#syncPull").onclick=async()=>{ saveSync(); await gistPull(); };
+  if($("#lnkSave")) $("#lnkSave").onclick=async()=>{ const L=linksCfg(); L.dash=$("#lnkDash").checked; L.fv=$("#lnkFv").checked; L.fvPass=($("#lnkFvPass").value||"").trim(); L.fvGist=($("#lnkFvGist").value||"").trim();
+    save({meta:true}); if(!S.sync.token||!S.sync.passphrase){ toast("Add the GitHub token and sync passphrase above first",true); return; }
+    $("#lnkSave").innerHTML='<span class="spin"></span> checking'; await refreshLinks({force:true}); render(); toast("Links checked"); };
   if($("#syncAuto")) $("#syncAuto").onchange=()=>{ saveSync(); toast(S.sync.auto?"Automatic sync on":"Automatic sync off: use Sync now"); if(S.sync.auto) syncPull({silent:true}); };
   $("#impF").onclick=()=>{ const i=document.createElement("input"); i.type="file"; i.accept=".json"; i.onchange=async()=>{ const t=await i.files[0].text(); try{ await importFullBackup(t); }catch(e){ toast("Restore failed: "+e.message,true);} }; i.click(); };
   $("#expJ").onclick=()=>{ const blob=new Blob([JSON.stringify(S,null,1)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="taxmax_data_"+new Date().toISOString().slice(0,10)+".json"; a.click(); };
@@ -3560,6 +3793,8 @@ syncSharedBills();
 syncAssetLines();
 render();
 autoPullOnOpen();
+if(S.sync&&S.sync.token){ setTimeout(()=>refreshLinks(),1200);
+  document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"&&Date.now()-LINKS.lastAt>120000) refreshLinks(); }); }
 </script>
 </body>
 </html>
