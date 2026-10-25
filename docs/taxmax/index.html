@@ -1531,6 +1531,47 @@ function recommendMethod(a){
   return opts.sort((x,y)=>score(y)-score(x))[0];
 }
 const METHOD_LABEL={pc:"Prime cost",dv:"Diminishing value",pool:"Low-value pool",instant:"Immediate deduction"};
+/* Items claimed with an older TaxMax (before the Asset Register existed) were saved as plain
+   deduction lines whose note reads "decline in value: $1,000.00 x 80% / 10y x 120 days", or as a
+   shared-asset bill. Rebuild each one as a register asset so its later years are claimed, and
+   mark the year it was lodged in as claimed (that year keeps its original line, untouched). */
+function localISO(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function importLegacyAssets(){
+  S.cfg.legacyAssetsDone=S.cfg.legacyAssetsDone||{};
+  const done=S.cfg.legacyAssetsDone, added=[]; S.assets=S.assets||[];
+  const n=v=>num(String(v||"").replace(/[$,]/g,""));
+  knownFYs().forEach(fy=>{
+    if(done[fy]) return;
+    let ws=null; if(fy===(S.meta.activeFY||"2025-26")) ws=S; else { try{ ws=JSON.parse(localStorage.getItem(fyKey(fy))||"null"); }catch(e){} }
+    if(!ws) return;
+    const fb=fyBounds(fy);
+    const startFrom=days=>{ if(days>=365) return {date:localISO(fb.start), check:true};
+      const d=new Date(fb.end.getTime()); d.setDate(d.getDate()-(days-1)); return {date:localISO(d), check:false}; };
+    const add=a=>{
+      if(S.assets.some(x=>(x.legacy&&a.legacy&&x.legacy.fy===a.legacy.fy&&x.legacy.ref===a.legacy.ref)||(x.label===a.label&&num(x.cost)===num(a.cost)&&x.purchaseDate===a.purchaseDate))) return;
+      a.id=uid(); a.method="pc"; a.cat="D5"; a.claimedYears={[fy]:"claimed"}; a.updatedAt=new Date().toISOString();
+      S.assets.push(a); added.push(a);
+    };
+    ["deepu","bhavana"].forEach(pk=>{
+      (((ws.people||{})[pk]||{}).deductions||[]).forEach(d=>{
+        if(String(d.src||"").startsWith("asset_")) return;
+        const m=/decline in value:\s*\$?([\d,.]+)\s*x\s*([\d.]+)%\s*\/\s*([\d.]+)\s*y\s*x\s*(\d+)\s*days/i.exec(d.notes||""); if(!m) return;
+        const st=startFrom(parseInt(m[4],10));
+        add({label:String(d.label||"Asset").trim(), owner:pk, cost:n(m[1]), workPct:n(m[2]), life:n(m[3]), purchaseDate:st.date, checkDate:st.check,
+             docId:d.docId||(d.evidence||[])[0]||null, legacy:{fy, ref:"d_"+d.id, claimed:num(d.amount)}});
+      });
+    });
+    (ws.sharedBills||[]).filter(b=>b.kind==="depr").forEach(b=>{
+      const m=/decline in value:\s*\$?([\d,.]+)\s*\/\s*([\d.]+)\s*y\s*x\s*(\d+)\s*days/i.exec(b.meta||""); if(!m) return;
+      const st=startFrom(parseInt(m[3],10));
+      add({label:String(b.label||"Shared asset").trim(), owner:"both", cost:n(m[1]), life:n(m[2]), pctDeepu:num(b.pctDeepu), pctBhavana:num(b.pctBhavana), workPct:100,
+           purchaseDate:st.date, checkDate:st.check, docId:(b.docs||[])[0]||null, legacy:{fy, ref:"b_"+b.id, claimed:billClaim(b,"deepu")+billClaim(b,"bhavana")}});
+    });
+    done[fy]=true;
+  });
+  if(added.length){ S.cfg.updatedAt=new Date().toISOString(); syncAssetLines(); save(); }
+  return added;
+}
 /* Turn the register into this FY's deduction / business-expense lines (src "asset_<id>"). */
 function syncAssetLines(){
   S.assets=S.assets||[];
@@ -1538,6 +1579,7 @@ function syncAssetLines(){
   S.assets.forEach(a=>{ if(!a.updatedAt) a.updatedAt=new Date().toISOString(); });
   const want={}; // src -> {pk|bk, amount, label, notes, evidence, cat}
   S.assets.forEach(a=>{
+    if(a.legacy&&a.legacy.fy===fyl) return; // lodged with the older app: that year's own line stands
     const y=assetYear(a, fyl); if(y.decline<=0) return;
     const pcts=assetOwnerPcts(a);
     Object.keys(pcts).forEach(who=>{
@@ -2083,6 +2125,7 @@ function renderSetup(m){
       const d=new Date(), y=d.getMonth()>=6?d.getFullYear():d.getFullYear()-1, nowFY=y+"-"+String((y+1)%100).padStart(2,"0");
       const fys=knownFYs(); const target=fys.indexOf(nowFY)>=0?nowFY:fys.slice().sort().pop();
       if(target&&target!==S.meta.activeFY) switchFY(target);
+      try{ importLegacyAssets(); }catch(e){ console.error(e); }
       render(); toast("Loaded from your other device. Sync is now automatic.");
       refreshLinks({force:true, render:true});
     }
@@ -2740,7 +2783,8 @@ VIEWS.assets=(m)=>{
       const rec=recommendMethod(a);
       const startFY=fyLabelOf(a.purchaseDate);
       const status = startFY && startFY>fyl ? '<span class="hint">starts FY'+startFY+'</span>' : (y.opening<=0&&startFY<fyl?'<span class="hint">written off</span>':'');
-      return '<tr><td>'+esc(a.label||"Asset")+(a.docId?' <span class="pill ok" style="font-size:10px">receipt</span>':' <span class="pill bad" style="font-size:10px">no receipt</span>')+'<div class="hint">'+(a.method==="pool"||a.method==="instant"?"":num(a.life)+"y life · ")+assetTaxablePct(a)+'% work'+(a.disposedDate?' · disposed '+esc(a.disposedDate):'')+'</div></td>'+
+      const legacyNote=a.legacy?'<div class="hint" style="color:var(--teal,#3BD9A4)">From your FY'+esc(a.legacy.fy)+' return'+(a.legacy.claimed?' (claimed '+money(a.legacy.claimed,2)+' then)':'')+'</div>'+(a.checkDate?'<div class="hint" style="color:var(--gold)">Bought before FY'+esc(a.legacy.fy)+'? Edit the start date so later years are right.</div>':''):'';
+      return '<tr><td>'+esc(a.label||"Asset")+legacyNote+(a.docId?' <span class="pill ok" style="font-size:10px">receipt</span>':' <span class="pill bad" style="font-size:10px">no receipt</span>')+'<div class="hint">'+(a.method==="pool"||a.method==="instant"?"":num(a.life)+"y life · ")+assetTaxablePct(a)+'% work'+(a.disposedDate?' · disposed '+esc(a.disposedDate):'')+'</div></td>'+
         '<td>'+esc(ownerLabel(a.owner))+'</td><td class="num">'+money(a.cost)+'</td><td>'+esc(a.purchaseDate||"?")+'</td>'+
         '<td>'+esc(METHOD_LABEL[a.method||"pc"])+(rec!==(a.method||"pc")&&!Object.values(a.claimedYears||{}).includes("claimed")?'<div class="hint" style="color:var(--gold)">'+esc(METHOD_LABEL[rec])+' gives more sooner</div>':'')+'</td>'+
         '<td class="num">'+money(y.opening)+'</td><td class="num"><b class="money pos">'+money(claim)+'</b>'+(status?'<div>'+status+'</div>':'')+'</td>'+
@@ -3859,6 +3903,7 @@ setActiveFYRates(S.meta.activeFY||"2025-26");
 if(S.ai && /^gemini-2\.0/.test(S.ai.geminiModel||"")){ S.ai.geminiModel="gemini-2.5-flash-lite"; save(); }
 syncSharedBills();
 syncAssetLines();
+try{ const la=importLegacyAssets(); if(la.length) setTimeout(()=>toast(la.length+" item"+(la.length===1?"":"s")+" you claimed part of last year "+(la.length===1?"is":"are")+" now in the Asset Register, with this year's share added to your deductions."),800); }catch(e){ console.error(e); }
 render();
 autoPullOnOpen();
 if(S.sync&&S.sync.token){ setTimeout(()=>refreshLinks(),1200);
