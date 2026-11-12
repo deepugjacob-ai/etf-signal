@@ -71,7 +71,7 @@ On the laptop, open the dashboard in Chrome or Edge and tap **Turn on alerts** t
 - **Every 20 minutes during ASX hours:** prices and paper values update. No alert.
 - **Friday from 3pm:** Strategy B's weekly check. You get an alert with any buys and sells, or "no changes".
 - **Weekdays from 3pm:** Strategy A makes its paper trades. No alerts.
-- **When the market trend changes** (uptrend, sideways, downtrend): an alert.
+- **When the market trend changes** (uptrend, sideways, downtrend): one alert, based on the last daily close. During the day the dashboard still shows the live reading, which is what Friday's 3pm check uses, but it no longer sends an alert each time the index crosses its average.
 - **Mid-week, if something you hold drops below its sell line** (98% of its 200-day average): a heads-up, at most once a week per ETF. It's information only: the rules still sell at the Friday check, and only if it's still below then. In real-money mode this watches your actual holdings; in paper mode, the paper portfolio.
 - **If a check fails:** one alert per day explaining what went wrong. The dashboard shows the error too.
 
@@ -97,12 +97,18 @@ EODHD_API_KEY=your_key python -m engine.backtest
 
 The live engine and the backtest share the same decision code, so the backtest tests exactly what runs live.
 
-Two more offline scripts, neither of which changes the live rules:
+Three more offline scripts, none of which changes the live rules:
 
 - `python -m engine.sensitivity` replays Strategy B with nearby settings (buy line 100–102%, sell line 97–99%, 3 to 7 holdings) and writes `docs/sensitivity.json`, shown in the dashboard's January review. Result: 7.7% to 12.2% a year across 45 settings, against 13.1% for the index mix; none beat it, all had a smaller worst fall. Read the spread, not the best row.
 - `python -m engine.odds_build` rebuilds `docs/odds.json`, the historical odds (see ETF price charts).
 
-Both cache downloaded prices in `~/.etf-signal-cache` (or `--cache DIR`).
+- `python -m engine.variants` replays ten commonly suggested rule changes (trailing stops of 8 to 15%, ranking by momentum divided by volatility, momentum ignoring the latest month, broad funds only, monthly checks, no buying more than 20% above the trend line, and a trend-filtered index mix) with the same fills and costs, and writes `docs/variants.json`, shown in the dashboard under Scorecard and backtest. Result (November 2026, 2014 to October 2026): live rules 8.9% a year, the alternatives 4.5% to 8.8%, the index mix 11.3%. None clearly beat the live rules and none beat the index mix, so the rules were left at version 2. It can also read cached daily files with `--csv DIR`.
+
+All three cache downloaded prices in `~/.etf-signal-cache` (or `--cache DIR`).
+
+## What to expect from it
+
+The dashboard's Overview opens with **How it's going**: your money, an imaginary portfolio that placed every order, and one that simply held the index mix, over the same days and deposits. Under it is what the long replay says to expect. In plain terms: over 2013 to 2026 these rules returned less than holding the index mix (about 10.6% a year against 13.1%), in exchange for a smaller worst fall (about −18% against −28%), and most of their gains are short-term, so taxed in full. A run of weeks behind the index is normal for this kind of strategy, and nothing tested so far (45 nearby settings, 10 other rule ideas) has beaten the index mix on return.
 
 ## Backtest results (rules version 2, 2 Jan 2013 to 2 Oct 2026)
 

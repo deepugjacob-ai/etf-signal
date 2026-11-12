@@ -202,6 +202,43 @@ button.etf:focus-visible{outline:3px solid var(--navy);outline-offset:2px;border
 .facts2 div{background:var(--ground);border-radius:10px;padding:8px 10px;font-size:.84rem;color:var(--muted)}
 .facts2 b{display:block;color:var(--ink);font-size:1rem}
 @media (max-width:480px){.hide-sm{display:none}}
+/* Nov 2026: answer first. Verdict card, compact holdings, and everything else folded away. */
+.strip{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;font-size:.88rem;color:var(--muted);margin:0 0 14px}
+.strip strong{color:var(--ink);font-weight:500}
+.rchip{font-weight:700;font-size:.82rem;padding:4px 10px;border-radius:999px}
+.rchip.bull{background:var(--buy-bg);color:var(--buy)} .rchip.bear{background:var(--sell-bg);color:var(--sell)}
+.rchip.sideways{background:var(--ochre-bg);color:var(--ochre)} .rchip.unknown{background:var(--ground);color:var(--muted)}
+.verdict{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:16px}
+.verdict h2{margin:0 0 2px}
+.verdict .since{color:var(--muted);font-size:.88rem;margin:0 0 12px}
+.vrows{display:grid;gap:8px;margin:0 0 12px}
+.vrow{display:grid;grid-template-columns:1fr auto;gap:2px 12px;align-items:baseline;padding:10px 12px;border-radius:12px;background:var(--ground)}
+.vrow.you{background:var(--navy);color:var(--surface)}
+@media (prefers-color-scheme: dark){.vrow.you{color:#10161D}}
+.vrow .who{font-weight:600}
+.vrow .how{font-size:.84rem;color:var(--muted);grid-column:1 / 3}
+.vrow.you .how{color:inherit;opacity:.8}
+.vrow .num{font-weight:800;font-size:1.3rem;letter-spacing:-.02em;white-space:nowrap}
+.vrow.you .num.pos,.vrow.you .num.neg{color:inherit}
+.vpoints{margin:0 0 12px;padding:0;list-style:none;display:grid;gap:8px;font-size:.94rem;line-height:1.5}
+.vpoints li{padding-left:14px;border-left:3px solid var(--line)}
+.vpoints li.warn{border-left-color:var(--ochre)}
+.vpoints li.bad{border-left-color:var(--sell)}
+details.fold{background:var(--surface);border:1px solid var(--line);border-radius:14px;margin-bottom:12px}
+details.fold>summary{cursor:pointer;list-style:none;padding:14px 16px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary::after{content:"";width:9px;height:9px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);flex:none;margin-right:4px;transition:transform .15s}
+details.fold[open]>summary::after{transform:rotate(-135deg)}
+details.fold>summary small{font-weight:400;color:var(--muted);font-size:.86rem;margin-left:auto;text-align:right}
+details.fold>.foldbody{padding:0 16px 16px}
+details.fold>.foldbody>.panel,details.fold>.foldbody>section.panel{border:0;padding:0;margin:0!important;background:transparent}
+details.fold>.foldbody .ticket{border:0}
+.positions.compact li{display:block}
+.prow{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.prow+.prow{margin-top:2px}
+.prow .sub2{min-width:0}
+.positions .chg{flex:none}
+.tag.near{background:var(--ochre-bg);color:var(--ochre)}
 </style>
 </head>
 <body>
@@ -609,6 +646,7 @@ function adherence(s) {
 
 /* ---------- info buttons: what each section does ---------- */
 const INFO = {
+  verdict: "Three results over exactly the same days and the same deposits: your real money, an imaginary portfolio that placed every order, and one that simply held the index mix. Growth leaves out the money you added, so it's comparable however much you put in. Below it: what the 2013 to 2026 replay of these rules says to expect, and whether you've been placing the orders. This is information about the tool's rules, not advice about what to do with your money.",
   market: "The overall trend of the Australian share market (the ASX 200), worked out from its 50- and 200-day averages. In an uptrend or sideways market, Strategy B can hold up to 5 ETFs; in a downtrend, at most 2, with the rest kept in cash. Prices are about 20 minutes delayed.",
   mode: "Paper: orders are for an imaginary portfolio scaled to your amount, so you can watch without risk. Real money: orders are sized from what you've actually recorded buying and your real cash. Your recorded trades are tracked in both modes.",
   invest: "Enter how much you want to invest today. It splits the money across the ETFs Strategy B holds right now, by the strategy's weights, giving more to picks you hold less of. With whole units, it rounds down and then uses the leftover. Each pick shows how ETFs in a similar position did historically. It follows the strategy's rules; it isn't a prediction.",
@@ -725,7 +763,70 @@ function oddsTable(k) {
 /* ---------- January review: the scorecard, agreed in advance (October 2026) ---------- */
 let SENS = null;
 fetch("sensitivity.json", { cache: "no-cache" }).then((r) => r.ok ? r.json() : null).then((d) => { SENS = d; if (STATE && STATE.B) render(); }).catch(() => {});
+let VARI = null;     // other rule ideas replayed over the same history (engine/variants.py)
+fetch("variants.json", { cache: "no-cache" }).then((r) => r.ok ? r.json() : null).then((d) => { VARI = d; if (STATE && STATE.B) render(); }).catch(() => {});
 const REVIEW_RULES = { adherence: 0.9, slippage: 0.0025, ddMargin: 0.02, distDays: 30 };
+
+/* Sections that start folded away. Which ones you've opened is remembered while the page is open. */
+const FOLD_OPEN = new Set();
+const fold = (key, title, body, hint = "") => `<details class="fold" data-fold="${key}" ${FOLD_OPEN.has(key) ? "open" : ""}><summary><span>${title}</span>${hint ? `<small>${hint}</small>` : ""}</summary><div class="foldbody">${body}</div></details>`;
+document.addEventListener("toggle", (e) => {
+  const d = e.target; if (!d || !d.dataset || !d.dataset.fold) return;
+  d.open ? FOLD_OPEN.add(d.dataset.fold) : FOLD_OPEN.delete(d.dataset.fold);
+}, true);
+
+/* Orders in the current set that you haven't recorded or skipped yet. */
+function openOrders(s, ad) {
+  const cur = isReal() ? s.B.real_orders : s.B.orders;
+  if (!cur || !(cur.items || []).length) return { date: null, items: [], sells: new Set() };
+  const items = cur.items.filter((it) => { const r = ad.rows.find((x) => x.key === (it.key || `${cur.date}|${it.side}|${it.ticker}`)); return !r || r.status === "open"; });
+  return { date: cur.date, items, sells: new Set(items.filter((it) => it.side === "SELL" && !it.trim && !it.cash).map((it) => it.ticker)) };
+}
+
+/* The answer first: how your money, the strategy and the plain index have done over the same days,
+   what the long history says to expect, and whether what you hold is still what the strategy holds. */
+function verdictCard(s, bk, ad) {
+  const mine = s.mine || {};
+  const hist = (mine.history || []).filter((p) => !bad(p.Y) && !bad(p.R) && !bad(p.M) && (!s.started || p.d >= s.started));
+  const h = s.history || [];
+  const real = mine.has_trades && hist.length >= 2;
+  let rows, from, to;
+  if (real) {
+    const Y = growth(hist, "Y"), R = growth(hist, "R"), M = growth(hist, "M");
+    from = hist[0].d; to = hist[hist.length - 1].d;
+    rows = [["you", "Your money", `${signed$(mine.gain)} on ${money(mine.contributed)} put in`, Y.ret],
+            ["", "If you had placed every order", "Strategy B exactly, same deposits on the same days", R.ret],
+            ["", "If you had just held the index mix", "40% STW, 40% IVV, 20% VEU, same deposits", M.ret]];
+  } else if (h.length >= 2) {
+    const a = h[0], b = h[h.length - 1];
+    from = a.d; to = b.d;
+    rows = [["you", "Strategy B on paper", "Every recommendation, after trading costs", b.B / a.B - 1],
+            ["", "Just holding the index mix", "40% STW, 40% IVV, 20% VEU", b.M / a.M - 1]];
+  } else return "";
+  const days = daysBetween(from, to), weeks = Math.max(1, Math.round(days / 7));
+  const points = [];
+  if (days < 182) points.push(["", `<b>${weeks} week${weeks === 1 ? "" : "s"} is too short to judge.</b> Over a few weeks, a gap of several percent either way between a trend strategy and the index is ordinary.`]);
+  if (SENS && SENS.rows) {
+    const live = SENS.rows.find((r) => r.live) || {}, m = SENS.mix || {}, sm = SENS.summary || {};
+    const v = VARI && VARI.summary;
+    points.push(["warn", `<b>What the long history says to expect.</b> From ${esc(SENS.start.slice(0, 4))} to ${esc(SENS.end.slice(0, 4))} these rules returned ${pct(live.cagr)} a year; simply holding the index mix returned ${pct(m.cagr)}. What the rules gave in exchange was a smaller worst fall: ${pct(live.max_dd)} against ${pct(m.max_dd)}. None of ${sm.runs} nearby settings beat the index mix${v ? `, and neither did any of ${v.variants} other rule ideas (stops, steadier funds, monthly checks)` : ""}. Most sales are within 12 months, so gains are also taxed in full.`]);
+  }
+  const oo = openOrders(s, ad);
+  const judged = ad.done + ad.skipped + ad.rows.filter((r) => r.status === "open" && r.date !== oo.date).length;
+  if (real && isReal() && judged >= 5 && ad.done / judged < 0.5) {
+    const stale = bk.holdings.filter((x) => oo.sells.has(x.ticker)).map((x) => x.ticker);
+    points.push(["bad", `<b>You've acted on ${ad.done} of ${judged} orders.</b> ${stale.length ? `${stale.map(esc).join(", ")} ${stale.length === 1 ? "has" : "have"} a sell order you haven't placed, so what you hold is no longer what the strategy holds. ` : ""}Your result then reflects neither the strategy nor the index, and the comparison above can't tell you whether the strategy works for you.`]);
+  }
+  const btn = oo.items.length ? `<button class="btn" data-goto="orders">See the ${oo.items.length} order${oo.items.length === 1 ? "" : "s"} waiting since ${esc(dayName(oo.date))}</button>` : "";
+  return `<section class="verdict" aria-labelledby="verdictTitle">
+    <h2 id="verdictTitle">How it's going${ih("verdict")}</h2>${ib("verdict")}
+    <p class="since">${esc(dayName(from))} to ${esc(dayName(to))} · ${weeks} week${weeks === 1 ? "" : "s"} · growth leaves out deposits</p>
+    <div class="vrows">${rows.map(([c, who, how, v]) => `<div class="vrow ${c}"><span class="who">${esc(who)}</span><span class="num ${cls(v)}">${pct(v)}</span><span class="how">${esc(how)}</span></div>`).join("")}</div>
+    <ul class="vpoints">${points.map(([c, t]) => `<li class="${c}">${t}</li>`).join("")}</ul>
+    ${btn ? `<div class="row">${btn}</div>` : ""}
+  </section>`;
+}
+document.addEventListener("click", (e) => { const b = e.target.closest("button[data-goto]"); if (b) showTab(b.dataset.goto); });
 /* Time-weighted growth of a value series that receives deposits (C = money put in so far): deposits don't count as gains. */
 function growth(hist, key) {
   let idx = 1, peak = 1, worst = 0, prev = null, prevC = null;
@@ -773,6 +874,14 @@ function reviewCard(s, bk, ad) {
         Strategy B at its rules: <b>${pct(live.cagr)}</b> a year, worst fall <b>${pct(live.max_dd)}</b>. Index mix: <b>${pct(m.cagr)}</b> a year, worst fall <b>${pct(m.max_dd)}</b>.
         Across ${sm.runs} nearby settings (buy line 100–102%, sell line 97–99%, 3 to 7 holdings): ${pct(sm.cagr_min)} to ${pct(sm.cagr_max)} a year. None beat the index mix; all ${sm.dd_better_than_mix === sm.runs ? "" : sm.dd_better_than_mix + " "}had a smaller worst fall.</p>
       <details><summary class="note" style="cursor:pointer">Year by year</summary><div class="scroll"><table><thead><tr><th>Year</th><th class="r">Strategy B</th><th class="r">Index mix</th></tr></thead><tbody>${years}</tbody></table></div></details>`;
+  }
+  if (VARI && VARI.rows) {
+    const vs = VARI.summary || {};
+    const vr = VARI.rows.map((r) => `<tr${r.kind === "live" ? ' class="held"' : ""}><td><b>${esc(r.name)}</b>${r.note ? `<div class="th">${esc(r.note)}</div>` : ""}</td><td class="r ${cls(r.cagr)}">${pct(r.cagr)}</td><td class="r">${pct(r.max_dd)}</td></tr>`).join("");
+    grid += `<h3 style="margin-top:18px">Would different rules have done better?</h3>
+      <p class="note" style="margin:0 0 8px">After the losses of October and November 2026, ${vs.variants} commonly suggested changes were replayed over ${esc(VARI.start.slice(0, 4))} to ${esc(dayName(VARI.end))} ${esc(VARI.end.slice(0, 4))} with the same fills and costs. <b>${vs.beat_live === 0 ? "None clearly beat the live rules" : vs.beat_live + " beat the live rules"}, and ${vs.beat_mix === 0 ? "none beat" : vs.beat_mix + " beat"} the index mix.</b> So the rules were left unchanged: swapping to whichever row looks best after a bad month is how strategies get overfitted.</p>
+      <details><summary class="note" style="cursor:pointer">Show the ${VARI.rows.length} rows</summary><div class="scroll"><table><thead><tr><th>Rules</th><th class="r">Per year</th><th class="r">Worst fall</th></tr></thead><tbody>${vr}</tbody></table></div>
+      <p class="chart-note">${VARI.regime_proxy ? "The market trend test used STW's price in place of the ASX 200 index for this replay. " : ""}Starts in ${esc(VARI.start.slice(0, 4))}, after a data error in 2013.</p></details>`;
   }
   return `<section class="panel" style="margin-top:12px"><h3>January review${ih("review")}</h3>${ib("review")}
     <p class="note" style="margin:0 0 8px">Scorecard for the test${mine.start ? ` since ${esc(dateLong(mine.start))}` : ""}, agreed in advance. The verdict is about process and falls, not about beating the index.</p>
@@ -939,6 +1048,13 @@ function positionStats(k, units, lots) {
   }
   return { now, dayLabel, dayChg };
 }
+function sellLineTag(k, waiting) {
+  if (waiting) return `<span class="tag below">Sell order waiting</span>`;
+  const r = ((STATE || {}).sell_line || {})[k];
+  if (!r || bad(r.line)) return "";
+  if (r.below) return `<span class="tag below">Below sell line ${money(r.line, 2)}</span>`;
+  return r.gap < 0.03 ? `<span class="tag near">Close to sell line ${money(r.line, 2)}</span>` : `Sell line ${money(r.line, 2)} · ${pct(r.gap)} above`;
+}
 function sellLineNote(k) {
   const r = ((STATE || {}).sell_line || {})[k];
   if (!r || bad(r.line)) return "";
@@ -949,6 +1065,7 @@ function positionsCard(s, bk) {
   if (!bk.count) return `<section class="panel" style="margin-bottom:16px"><h3>Your holdings${ih("holdings")}</h3>${ib("holdings")}
     <p class="note" style="margin:0 0 10px">${bk.hasFlows ? `You've put in ${money(bk.contributed)} and haven't recorded any purchases yet.` : "You haven't recorded any purchases yet."} After you buy in Betashares, record it in Orders: tap “I did this” on an order, or use “Record another trade”.</p>${moneyControls()}</section>`;
   let invested = 0, worth = 0, dayTotal = 0, dayKnown = false, dayLabel = null;
+  const waitingSells = isReal() ? openOrders(s, adherence(s)).sells : new Set();
   const rows = bk.holdings.map((h) => {
     const st = positionStats(h.ticker, h.units, h.lots);
     const value = st.now != null ? h.units * st.now : h.value;
@@ -957,19 +1074,18 @@ function positionsCard(s, bk) {
     if (st.dayChg != null) { dayTotal += st.dayChg; dayKnown = true; dayLabel = st.dayLabel; }
     const first = h.lots.map((l) => l.date).sort()[0];
     const avg = h.cost / h.units;
+    const tag = h.ticker === "AAA" ? "Cash ETF" : sellLineTag(h.ticker, waitingSells.has(h.ticker));
     return `<li>
-      <div><span class="t" style="font-size:1.1rem">${etf(h.ticker)}</span>
-        <div class="sub2">${num(h.units)} units, bought ${esc(dayName(first))} at ${money(avg, 2)}${h.lots.length > 1 ? " (average)" : ""}</div>
-        <div class="sub2">Now ${money(st.now, 2)} · cost ${money(h.cost)}</div>${h.dists > 0.005 ? `<div class="sub2">Distributions received ${money(h.dists)}</div>` : ""}${sellLineNote(h.ticker)}</div>
-      <div><div class="val">${money(value)}</div>
-        <div class="chg ${cls(gain)}">${signed$(gain)} (${pct(h.cost ? gain / h.cost : null)}) since bought</div>
-        ${st.dayChg != null ? `<div class="chg ${cls(st.dayChg)}">${signed$(st.dayChg)} ${esc(st.dayLabel.toLowerCase() === "today" ? "today" : "on " + st.dayLabel)}</div>` : ""}</div>
+      <div class="prow"><span class="t" style="font-size:1.1rem">${etf(h.ticker)}</span><span class="val">${money(value)}</span></div>
+      <div class="prow"><span class="sub2">${num(h.units)} units · ${h.lots.length > 1 ? "avg " : "paid "}${money(avg, 2)} · now ${money(st.now, 2)}</span><span class="chg ${cls(gain)}">${signed$(gain)} (${pct(h.cost ? gain / h.cost : null)})</span></div>
+      <div class="prow"><span class="sub2">${tag}</span>${st.dayChg != null ? `<span class="chg ${cls(st.dayChg)}">${signed$(st.dayChg)} ${esc(st.dayLabel.toLowerCase() === "today" ? "today" : "on " + st.dayLabel)}</span>` : ""}</div>
+      ${h.dists > 0.005 ? `<div class="sub2">Bought ${esc(dayName(first))} · distributions received ${money(h.dists)}</div>` : ""}
     </li>`;
   }).join("");
   const gainAll = worth - invested;
   const checked = (s.status || {}).checked;
   return `<section class="panel" style="margin-bottom:16px"><h3>Your holdings${ih("holdings")}</h3>${ib("holdings")}
-    <ul class="positions">${rows}</ul>
+    <ul class="positions compact">${rows}</ul>
     <div class="postotal"><span>Spent on ETFs <b>${money(invested)}</b></span><span>Now worth <b>${money(worth)}</b></span>
       <span>Gain <b class="${cls(gainAll)}">${signed$(gainAll)} (${pct(invested ? gainAll / invested : null)})</b></span>
       ${dayKnown ? `<span>${esc(dayLabel === "Today" ? "Today" : dayLabel)} <b class="${cls(dayTotal)}">${signed$(dayTotal)}</b></span>` : ""}
@@ -1383,32 +1499,27 @@ function renderOverview(s, bk, ad) {
   const yourItems = bk.holdings.map((x, i) => ({ label: x.ticker, value: x.value || 0, color: PALETTE[i % PALETTE.length] })).concat([{ label: "Cash", value: Math.max(0, bk.cash), color: "var(--c7)" }]);
   const alerts = (s.alerts || []).slice(0, 8).map((a) => `<li><time>${esc(when(a.time))}</time><b>${esc(a.title)}</b>${esc(a.body)}</li>`).join("");
 
+  const oo = openOrders(s, ad);
   $("#overview").innerHTML = `
-    <section class="hero">
-      <div><div class="label">Market today${ih("market")}</div>${ib("market")}<div class="regime ${esc(s.regime)}">${esc(word)}</div><p>${esc(line)}</p></div>
-      <div class="facts">
-        <span>Prices: <strong>${mk.market_open ? "delayed ~20 min, " + esc(when(mk.quote_time)) : "last close " + esc(dayName(mk.last_daily_close))}</strong></span>
-        <span>Checked: <strong>${esc(when((s.status || {}).checked))}</strong></span>
-        <span>Trend since: <strong>${esc(dayName(s.regime_since))}</strong></span>
-      </div>
-    </section>
-    ${modeBar()}
-    ${investCard(s, bk)}
+    <div class="strip"><span class="rchip ${esc(s.regime)}">${esc(word)} market</span>${ih("market")}
+      <span>Prices <strong>${mk.market_open ? esc(when(mk.quote_time)) + " (20 min delayed)" : "last close " + esc(dayName(mk.last_daily_close))}</strong></span>
+      <span>Next check <strong>${esc(nextWeekly(s))}</strong></span></div>${ib("market")}
+    ${verdictCard(s, bk, ad)}
     ${positionsCard(s, bk)}
     ${coreCard(s, false)}
-    <div style="display:flex;align-items:center;margin:0 0 6px"><span class="note">Summary</span>${ih("tiles")}</div>${ib("tiles")}
-    <div class="tiles">${tiles}</div>
-    ${reviewCard(s, bk, ad)}
-    <div class="grid2">
+    ${investCard(s, bk)}
+    ${fold("score", "Scorecard and backtest", `<div style="display:flex;align-items:center;margin:0 0 6px"><span class="note">Summary</span>${ih("tiles")}</div>${ib("tiles")}
+      <div class="tiles">${tiles}</div>${reviewCard(s, bk, ad)}`, "January review, 2013 to 2026 replay")}
+    ${fold("charts", "Charts", `<div class="grid2">
       <section class="panel"><h3>You vs following every recommendation${ih("cmp")}</h3>${ib("cmp")}${cmpChart}</section>
       <section class="panel"><h3>The yardsticks since ${esc(dayName(s.started))}${ih("yard")}</h3>${ib("yard")}${stratChart}<p class="chart-note">Shown for ${money(CAPITAL)}, after a 0.15% cost on every trade.</p></section>
-    </div>
-    <div class="grid2" style="margin-top:12px">
-      <section class="panel"><h3>Where the recommended money is${ih("donuts")}</h3>${ib("donuts")}${donut(recItems, "Recommended allocation")}</section>
-      <section class="panel"><h3>Where your money is</h3>${bk.count ? donut(yourItems, "Your allocation") : `<p class="chart-note">Appears once you record trades.</p>`}</section>
-    </div>
-    <section style="margin-top:26px"><h2>Recent alerts${ih("alerts")}</h2>${ib("alerts")}
-      <div class="panel">${alerts ? `<ul class="alerts">${alerts}</ul>` : `<p class="note" style="margin:0">No alerts yet.</p>`}</div></section>`;
+    </div>`, "You, the strategy and the index")}
+    ${fold("where", "Where the money is", `<div class="grid2">
+      <section class="panel"><h3>Recommended${ih("donuts")}</h3>${ib("donuts")}${donut(recItems, "Recommended allocation")}</section>
+      <section class="panel"><h3>Yours</h3>${bk.count ? donut(yourItems, "Your allocation") : `<p class="chart-note">Appears once you record trades.</p>`}</section>
+    </div>`, vB.holdings.map((x) => esc(x.ticker)).join(", ") || "All in AAA")}
+    ${fold("alerts", `Recent alerts${ih("alerts")}`, `${ib("alerts")}${alerts ? `<ul class="alerts">${alerts}</ul>` : `<p class="note" style="margin:0">No alerts yet.</p>`}`, (s.alerts || []).length ? esc(when(s.alerts[0].time)) : "")}
+    ${fold("mode", "Paper or real money", modeBar() + `<p class="note" style="margin:0">${esc(line)} Trend since ${esc(dayName(s.regime_since))}, measured at the daily close. Last checked ${esc(when((s.status || {}).checked))}.</p>`, isReal() ? "Real money" : "Paper")}`;
 }
 
 /* ---------- orders ---------- */
@@ -1483,7 +1594,7 @@ function renderOrders(s, bk, ad) {
         <div class="row" style="margin-top:10px"><button class="mini primary" data-act="recalc">Recalculate my orders</button><span class="note" id="recalcMsg"></span></div>
         ${ORDER_TIP.replace("waiting until Monday is fine.", "waiting until Monday is fine; tap Recalculate first so the units match Monday's prices.")}</div>
     </section>
-    <div style="margin-top:22px">${paperTicket(true)}</div>`;
+    <div style="margin-top:16px">${fold("paper", "Paper portfolio orders", paperTicket(true), "Nothing to do here")}</div>`;
   }
   const past = ad.rows.filter((r) => r.date !== curDate).slice(0, 40).map((r) => `<tr><td>${esc(dayName(r.date))}</td>
       <td><span class="side ${r.item.side}">${r.item.side === "BUY" ? "Buy" : "Sell"}</span></td><td class="t">${esc(r.item.ticker)}</td>
@@ -1501,24 +1612,27 @@ function renderOrders(s, bk, ad) {
       <td class="r">${t.status !== "done" ? "" : t.amount ? money(t.amount, t.side === "DIST" ? 2 : 0) : money(t.units * t.price)}</td><td class="hide-sm">${t.side === "DIST" ? (t.units > 0 ? `Reinvested: ${num(t.units)} units` : "Paid as cash") : t.amount ? esc(t.note || "") : STATE.universe && !STATE.universe.some((u) => u.ticker === t.ticker) ? `<span class="tag below">Unknown ETF, not counted</span>` : t.order_key ? "From an order" : "Your own"}</td>
       <td><button class="mini" data-act="del" data-id="${esc(t.id)}">Delete</button></td></tr>`).join("");
 
+  const pastOpen = ad.rows.filter((r) => r.date !== curDate && r.status === "open");
+  if (pastForm) FOLD_OPEN.add("earlier");
   $("#orders").innerHTML = `${ticket}
-    <section style="margin-top:26px"><h2>Earlier orders${ih("earlier")}</h2>${ib("earlier")}<p class="sub">Every earlier ${real ? "real-money" : "Strategy B"} order and whether you followed it. Price difference: positive means you paid more (or sold for less) than suggested.</p>
+    <div style="margin-top:16px">${fold("earlier", `Earlier orders${ih("earlier")}`, `${ib("earlier")}<p class="sub">Every earlier ${real ? "real-money" : "Strategy B"} order and whether you followed it. Each week's orders replace the week before, so an old order you never placed can't be placed now. Price difference: positive means you paid more (or sold for less) than suggested.</p>
+      ${pastOpen.length ? `<div class="row" style="margin:0 0 12px"><button class="mini" data-act="skipall">Mark the ${pastOpen.length} unrecorded earlier order${pastOpen.length === 1 ? "" : "s"} as skipped</button></div>` : ""}
       ${pastForm}
-      <div class="panel scroll"><table><thead><tr><th>Date</th><th>Side</th><th>ETF</th><th class="r">Suggested</th><th>You</th><th class="r">Price diff</th><th></th></tr></thead>
-      <tbody>${past || `<tr><td colspan="7">No earlier orders yet.</td></tr>`}</tbody></table></div></section>
+      <div class="scroll"><table><thead><tr><th>Date</th><th>Side</th><th>ETF</th><th class="r">Suggested</th><th>You</th><th class="r">Price diff</th><th></th></tr></thead>
+      <tbody>${past || `<tr><td colspan="7">No earlier orders yet.</td></tr>`}</tbody></table></div>`, pastOpen.length ? `${pastOpen.length} not recorded` : "")}</div>
     <section><h2>Import from Betashares</h2><p class="sub">Upload the transactions CSV you export from Betashares. Each row is sorted into the strategy, your own ETFs or the managed portfolio; anything already recorded is skipped, and figures you typed by hand are corrected to Betashares' exact ones. You see a preview before anything is saved, and importing the same file twice adds nothing.</p>
       <div class="panel"><div class="row">${importButton()}</div></div></section>
-    <section><h2>Record another trade${ih("record")}</h2>${ib("record")}<p class="sub">For trades that weren't in an order, for example buying earlier or later than suggested.</p>
-      <div class="panel"><div class="fields">
+    ${fold("record", `Record another trade${ih("record")}`, `${ib("record")}<p class="sub">For trades that weren't in an order, for example buying earlier or later than suggested.</p>
+      <div><div class="fields">
         <div><label for="m-side">Side</label><select id="m-side"><option value="BUY">Buy</option><option value="SELL">Sell</option></select></div>
         <div><label for="m-tic">ETF</label><select id="m-tic">${tickers}</select></div>
         <div><label for="m-date">Date</label><input id="m-date" type="date" value="${sydParts().date}" max="${sydParts().date}"></div>
         <div><label for="m-units">Units</label><input id="m-units" type="number" step="any" min="0"></div>
         <div><label for="m-price">Price per unit</label><input id="m-price" type="number" step="any" min="0"></div>
-      </div><div class="row" style="margin-top:12px"><button class="btn" data-act="manual">Save trade</button></div><div class="msg" id="m-msg" role="status"></div></div></section>
-    <section><h2>Your trade record${ih("trades")}</h2>${ib("trades")}<p class="sub">${bk.count} trade${bk.count === 1 ? "" : "s"} recorded. Your cash is the money you've put in (${money(bk.contributed)}), minus purchases, plus sales and distributions. Add money from the Overview; record distributions in Holdings.</p>
-      <div class="panel scroll"><table><thead><tr><th>Date</th><th>Side</th><th>ETF</th><th class="r">Units</th><th class="r">Price</th><th class="r">Value</th><th class="hide-sm">Source</th><th></th></tr></thead>
-      <tbody>${mine || `<tr><td colspan="8">Nothing recorded yet.</td></tr>`}</tbody></table></div></section>`;
+      </div><div class="row" style="margin-top:12px"><button class="btn" data-act="manual">Save trade</button></div><div class="msg" id="m-msg" role="status"></div></div>`, "Not from an order")}
+    ${fold("trades", `Your trade record${ih("trades")}`, `${ib("trades")}<p class="sub">${bk.count} trade${bk.count === 1 ? "" : "s"} recorded. Your cash is the money you've put in (${money(bk.contributed)}), minus purchases, plus sales and distributions. Add money from the Overview; record distributions in Holdings.</p>
+      <div class="scroll"><table><thead><tr><th>Date</th><th>Side</th><th>ETF</th><th class="r">Units</th><th class="r">Price</th><th class="r">Value</th><th class="hide-sm">Source</th><th></th></tr></thead>
+      <tbody>${mine || `<tr><td colspan="8">Nothing recorded yet.</td></tr>`}</tbody></table></div>`, `${TRADES.length} entr${TRADES.length === 1 ? "y" : "ies"}`)}`;
 }
 
 function findOrderItem(key) {
@@ -1540,6 +1654,15 @@ $("#orders").addEventListener("click", async (e) => {
       b.disabled = false; return;
     }
     if (act === "cancel") { OPEN_FORM = null; render(); return; }
+    if (act === "skipall") {
+      const cur = isReal() ? STATE.B.real_orders : STATE.B.orders, curDate = cur ? cur.date : null;
+      const todo = adherence(STATE).rows.filter((r) => r.date !== curDate && r.status === "open");
+      if (!todo.length || !confirm(`Mark ${todo.length} earlier order${todo.length === 1 ? "" : "s"} as skipped? This only records that you didn't place them; it doesn't change your holdings.`)) return;
+      b.disabled = true;
+      const stamp = new Date().toISOString(), keys = new Set(todo.map((r) => r.key));
+      await mutateTrades((l) => l.filter((t) => !keys.has(t.order_key)).concat(todo.map((r) => ({ id: newId(), order_key: r.key, status: "skipped", date: r.date, side: r.item.side, ticker: r.item.ticker, recorded: stamp }))));
+      return;
+    }
     if (act === "undo") { await mutateTrades((l) => l.filter((t) => t.order_key !== key)); return; }
     if (act === "del") { await mutateTrades((l) => l.filter((t) => t.id !== b.dataset.id)); return; }
     if (act === "skip") {

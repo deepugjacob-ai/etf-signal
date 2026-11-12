@@ -127,6 +127,15 @@ def watch_sell_line(state, alerts, now, ind, t, info, raw_last, watched, label, 
               "sell-line")
 
 
+def confirmed_regime(ind, today):
+    """The market trend at the last completed day's close, and that day. Today's part-day price never counts,
+    so the trend can't flip back and forth during the day when the index sits right on its average."""
+    r = ind["regime"]
+    done = r[r.index < pd.Timestamp(today)]
+    done = done if len(done) else r
+    return done.iloc[-1], done.index[-1].date().isoformat()
+
+
 def add_alert(state, alerts, now, title, body, tag):
     a = {"id": f"{now.isoformat()}|{tag}", "time": now.isoformat(), "title": title, "body": body, "tag": tag}
     alerts.append(a)
@@ -174,14 +183,20 @@ def run(state, now, key, alerts, scale=1.0, capital=C.START_CAPITAL, mytrades=No
         add_alert(state, alerts, now, "Paper trading started",
                   f"Both strategies start with {money(C.START_CAPITAL * scale)} of paper money.", "start")
 
-    # Market regime
+    # Market regime. The dashboard shows the live reading (it is what the 3pm Friday decision uses), but alerts and
+    # "trend since" follow the last completed close: the live reading flipped several times a day when the index
+    # sat on its average, sending a string of contradicting alerts.
     reg = ind["regime"].iloc[-1]
-    prev = state.get("regime")
-    if prev and prev != reg and open_today:
-        add_alert(state, alerts, now, f"Market regime: {reg}", f"The ASX 200 trend changed from {prev} to {reg}. "
-                  + ("Strategy B will hold at most 2 ETFs at the next weekly check." if reg == "bear" else ""), "regime")
-    if prev != reg:
-        state["regime_since"] = tstr
+    conf, conf_day = confirmed_regime(ind, today)
+    prev = state.get("regime_confirmed")
+    if prev and prev != conf and conf != "unknown":
+        add_alert(state, alerts, now, f"Market trend: {conf}",
+                  f"At the close on {conf_day} the ASX 200 trend changed from {prev} to {conf}. "
+                  + ("If it is still a downtrend at Friday's 3pm check, Strategy B will hold at most 2 ETFs." if conf == "bear" else ""),
+                  "regime")
+    if prev != conf and (prev or not state.get("regime_since")):
+        state["regime_since"] = conf_day
+    state["regime_confirmed"] = conf
     state["regime"] = reg
 
     # Strategy B: weekly (Friday from 3pm), catch-up if a week was missed, and at start
