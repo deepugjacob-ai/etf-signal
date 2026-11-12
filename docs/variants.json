@@ -1,0 +1,162 @@
+{
+ "built": "2026-11-12",
+ "start": "2014-01-02",
+ "end": "2026-10-22",
+ "rules_version": 2,
+ "fills": "next day's close, 0.15% cost per trade",
+ "rows": [
+  {
+   "name": "Index mix, bought and held",
+   "kind": "index",
+   "cagr": 0.11336568703406802,
+   "max_dd": -0.2778071721775486,
+   "sharpe": 0.7452059583802728,
+   "cagr_first": 0.11423538652582566,
+   "cagr_second": 0.11205132089098879,
+   "invested": 1.0,
+   "trades_per_year": null,
+   "note": "40% STW, 40% IVV, 20% VEU, rebalanced monthly"
+  },
+  {
+   "name": "Live rules (version 2)",
+   "kind": "live",
+   "cagr": 0.08945461755909934,
+   "max_dd": -0.18673660177432638,
+   "sharpe": 0.5902556870609574,
+   "cagr_first": 0.059610812275192826,
+   "cagr_second": 0.1162141278378932,
+   "invested": 0.7810752844866592,
+   "trades_per_year": 20.11960542540074,
+   "note": ""
+  },
+  {
+   "name": "Rank by momentum divided by volatility",
+   "kind": "variant",
+   "cagr": 0.04520830969563994,
+   "max_dd": -0.18101870465936787,
+   "sharpe": 0.2916974748565425,
+   "cagr_first": 0.05591536135901798,
+   "cagr_second": 0.0357172903355929,
+   "invested": 0.7199184896811618,
+   "trades_per_year": 19.498150431565968,
+   "note": "Favours steadier funds over the jumpiest ones"
+  },
+  {
+   "name": "Momentum ignoring the latest month",
+   "kind": "variant",
+   "cagr": 0.07929376783896425,
+   "max_dd": -0.18481416396464911,
+   "sharpe": 0.5184742315823211,
+   "cagr_first": 0.06103161374889088,
+   "cagr_second": 0.09518014961800914,
+   "invested": 0.7799799511729489,
+   "trades_per_year": 19.964241676942045,
+   "note": "A common academic version of momentum"
+  },
+  {
+   "name": "Live rules plus a 8% trailing stop",
+   "kind": "variant",
+   "cagr": 0.08759349708785469,
+   "max_dd": -0.18652258616075434,
+   "sharpe": 0.5971806096191611,
+   "cagr_first": 0.0585691252477234,
+   "cagr_second": 0.11359495039975953,
+   "invested": 0.7680032438976248,
+   "trades_per_year": 25.479654747225645,
+   "note": "Sells at the weekly check once that far below the highest close since purchase"
+  },
+  {
+   "name": "Live rules plus a 10% trailing stop",
+   "kind": "variant",
+   "cagr": 0.08487446305063484,
+   "max_dd": -0.18459189815051402,
+   "sharpe": 0.5667009500642702,
+   "cagr_first": 0.06036217834426805,
+   "cagr_second": 0.10671453562105548,
+   "invested": 0.7739948427143228,
+   "trades_per_year": 22.76078914919852,
+   "note": "Sells at the weekly check once that far below the highest close since purchase"
+  },
+  {
+   "name": "Live rules plus a 12% trailing stop",
+   "kind": "variant",
+   "cagr": 0.08543771030252056,
+   "max_dd": -0.1883143636525636,
+   "sharpe": 0.5714821076095034,
+   "cagr_first": 0.059610812275192826,
+   "cagr_second": 0.10848703342802368,
+   "invested": 0.7750003635527722,
+   "trades_per_year": 21.750924784217016,
+   "note": "Sells at the weekly check once that far below the highest close since purchase"
+  },
+  {
+   "name": "Live rules plus a 15% trailing stop",
+   "kind": "variant",
+   "cagr": 0.08526175784850287,
+   "max_dd": -0.1867576610335372,
+   "sharpe": 0.5638873573246976,
+   "cagr_first": 0.059610812275192826,
+   "cagr_second": 0.10814913841029483,
+   "invested": 0.7783993860771882,
+   "trades_per_year": 21.051787916152897,
+   "note": "Sells at the weekly check once that far below the highest close since purchase"
+  },
+  {
+   "name": "Broad funds only",
+   "kind": "variant",
+   "cagr": 0.055882949079420374,
+   "max_dd": -0.1906438308911459,
+   "sharpe": 0.36296916842161653,
+   "cagr_first": 0.05588808408307,
+   "cagr_second": 0.055629868987496334,
+   "invested": 0.767130173917933,
+   "trades_per_year": 19.032059186189887,
+   "note": "No single-sector or thematic ETFs"
+  },
+  {
+   "name": "Live rules, checked monthly",
+   "kind": "variant",
+   "cagr": 0.08692515417355873,
+   "max_dd": -0.20829957927070586,
+   "sharpe": 0.5673901086298304,
+   "cagr_first": 0.0533802750419381,
+   "cagr_second": 0.11712654540262313,
+   "invested": 0.7534351693618111,
+   "trades_per_year": 14.3711467324291,
+   "note": ""
+  },
+  {
+   "name": "No new buys more than 20% above the trend line",
+   "kind": "variant",
+   "cagr": 0.08584179243838563,
+   "max_dd": -0.21071481143773696,
+   "sharpe": 0.5703555241119507,
+   "cagr_first": 0.0594992335391511,
+   "cagr_second": 0.10936607423865086,
+   "invested": 0.7843956853011451,
+   "trades_per_year": 20.274969173859432,
+   "note": "Avoids buying the most stretched funds"
+  },
+  {
+   "name": "Index mix, each part only while above its trend line",
+   "kind": "variant",
+   "cagr": 0.07814781823259742,
+   "max_dd": -0.17453240347272603,
+   "sharpe": 0.5835779559328266,
+   "cagr_first": 0.0878246834605112,
+   "cagr_second": 0.06916794160719286,
+   "invested": null,
+   "trades_per_year": 4.039457459926017,
+   "note": ""
+  }
+ ],
+ "summary": {
+  "variants": 10,
+  "beat_live": 0,
+  "beat_mix": 0,
+  "best_variant": 0.08759349708785469,
+  "live": 0.08945461755909934,
+  "mix": 0.11336568703406802
+ },
+ "regime_proxy": "STW price"
+}
